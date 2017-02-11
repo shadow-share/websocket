@@ -41,6 +41,56 @@ from websocket import utils
 # |Sec-WebSocket-Version|.  The value of this header field MUST be
 # 13.
 
+# The request MAY include a header field with the name
+# |Sec-WebSocket-Protocol|.  If present, this value indicates one
+# or more comma-separated subprotocol the client wishes to speak,
+# ordered by preference.
+
+# The request MAY include a header field with the name
+# |Sec-WebSocket-Extensions|.  If present, this value indicates
+# the protocol-level extension(s) the client wishes to speak.  The
+# interpretation and format of this header field is described in
+# Section 9.1.
+
+# The request MAY include any other header fields, for example,
+# cookies [RFC6265] and/or authentication-related header fields
+# such as the |Authorization| header field [RFC2616], which are
+# processed according to documents that define them.
+
+
+# If the status code received from the server is not 101, the
+# client handles the response per HTTP [RFC2616] procedures.
+
+# If the response lacks an |Upgrade| header field or the |Upgrade|
+# header field contains a value that is not an ASCII case-
+# insensitive match for the value "websocket", the client MUST
+# _Fail the WebSocket Connection_.
+
+# If the response lacks a |Connection| header field or the
+# |Connection| header field doesn't contain a token that is an
+# ASCII case-insensitive match for the value "Upgrade", the client
+# MUST _Fail the WebSocket Connection_.
+
+# If the response lacks a |Sec-WebSocket-Accept| header field or
+# the |Sec-WebSocket-Accept| contains a value other than the
+# base64-encoded SHA-1 of the concatenation of the |Sec-WebSocket-
+# Key| (as a string, not base64-decoded) with the string "258EAFA5-
+# E914-47DA-95CA-C5AB0DC85B11" but ignoring any leading and
+# trailing whitespace, the client MUST _Fail the WebSocket
+# Connection_.
+
+# If the response includes a |Sec-WebSocket-Extensions| header
+# field and this header field indicates the use of an extension
+# that was not present in the client's handshake (the server has
+# indicated an extension not requested by the client), the client
+# MUST _Fail the WebSocket Connection_.
+
+# If the response includes a |Sec-WebSocket-Protocol| header field
+# and this header field indicates the use of a subprotocol that was
+# not present in the client's handshake (the server has indicated a
+# subprotocol not requested by the client), the client MUST _Fail
+# the WebSocket Connection_.
+
 class WebSocket_Client(object):
     def __init__(self):
         pass

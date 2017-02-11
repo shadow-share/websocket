@@ -14,7 +14,11 @@ HTTP_VERSION_1_1 = '1.1'
 
 # Response status code description
 _response_status_code_description = {
-
+    400: 'Bad Request',
+    401: '',
+    403: 'Forbidden',
+    404: 'Not Found',
+    426: 'Upgrade Required'
 }
 
 # Request line namedtuple
@@ -70,6 +74,19 @@ def ws_generate_key():
     random_16byte_string = _random_bytes_string(16)
     return base64.b64encode(random_16byte_string)
 
+# A |Sec-WebSocket-Key| header field with a base64-encoded
+# value that, when decoded, is 16 bytes in length.
+def ws_check_key_length(key):
+    if isinstance(key, (str, bytes)):
+        return _base64_decode_length(key) is 16
+    raise KeyError('the key must be str or bytes')
+
+# check base64.b64decode string length
+def _base64_decode_length(key):
+    if isinstance(key, (str, bytes)):
+        return len(base64.b64decode(key))
+    raise KeyError('the key must be str or bytes')
+
 def http_header_parser(raw_header):
     header = to_string(raw_header)
     lines = list(filter(lambda l: l != '', header.split('\r\n')))
@@ -78,5 +95,5 @@ def http_header_parser(raw_header):
 
     return Request_Header(request_line, header_fields)
 
-def http_header_generate(status_code, header_dict, http_version = HTTP_VERSION_1_1, status_description = None):
+def http_header_generate(status_code, header_fields, http_version = HTTP_VERSION_1_1, status_description = None):
     pass

@@ -61,57 +61,26 @@ from websocket import utils
 
 # Supporting Multiple Versions of WebSocket Protocol
 
-class Version_Handler_Interface(metaclass = abc.ABCMeta):
+
+# a client MUST mask all frames that it sends to the server.  (Note
+# that masking is done whether or not the WebSocket Protocol is running
+# over TLS.)  The server MUST close the connection upon receiving a
+# frame that is not masked.  In this case, a server MAY send a Close
+# frame with a status code of 1002 (protocol error)
+
+# A server MUST NOT mask any frames that it sends to
+# the client.  A client MUST close a connection if it detects a masked
+# frame.
+
+class WebSocket_Server_Base(object, metaclass = abc.ABCMeta):
+
     def __init__(self):
         pass
 
-    @abc.abstractclassmethod
-    def checkout(self):
-        pass
 
-class WebSocket_Server_Base(metaclass = abc.ABCMeta):
-    def __init__(self):
-        self.__version_list = []
-        self.__protocol_list = []
-
-    def run(self, port = 8090, hostname = 'localhost', debug = False):
-        pass
-
-    def run_with_handler(self):
-        pass
-
-    def register_version(self, version, handler):
-        pass
-
-    def register_protocol(self, protocol_name, handler):
-        pass
-
-    def send_message(self):
-        pass
-
-class WebSocket_Server_Params_Checker_Mixin(WebSocket_Server_Base):
-    def _from_header_fields_get(self, key):
-        pass
-
-    def _check_ws_key_length(self):
-        ws_key = self._from_header_fields_get('Sec-WebSocket-Key')
-        return utils.ws_check_key_length(ws_key)
-
-    def _check_ws_version_valid(self):
-        ws_version = self._from_header_fields_get('Sec-WebSocket-Version')
-        return ws_version in self.__version_list
-
-    def _check_ws_protocol_valid(self):
-        pass
-
-    def _check_ws_other_params(self):
-        pass
-
-class WebSocket_Plain_Server(WebSocket_Server_Base):
+def create_websocket_server():
     pass
 
-class WebSocket_Event_Server(WebSocket_Server_Base):
+def create_websocket_event_server():
     pass
 
-def create_ws_server():
-    pass

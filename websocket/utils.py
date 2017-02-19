@@ -30,7 +30,7 @@ Header_Field = namedtuple('Header_Item', 'key value')
 # Request header namedtuple
 Request_Header = namedtuple('Request_Header', 'lead fields')
 
-# GUID
+# GUID String
 _const_guid_string = b'258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
 
 def to_string(byte_string, encoding = 'utf-8'):
@@ -60,9 +60,9 @@ def ws_accept_key(key):
 
 # a nonce consisting of a randomly selected 16-byte value
 # 1-byte(0 - 127), not 0 - 255
-def _random_bytes_string(string_size, start = 0, stop = 0x7f, encoding = 'utf-8'):
+def _random_bytes_string(string_length, start = 0, stop = 0x7f, encoding = 'utf-8'):
     rst_string = b''
-    for _ in range(string_size):
+    for _ in range(string_length):
         rst_string += chr(random.randint(start, stop)).encode(encoding)
     return rst_string
 

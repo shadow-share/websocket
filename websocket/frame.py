@@ -123,6 +123,25 @@ Application data:  y bytes
 
 '''
 import struct
+from websocket import utils
 
-def byte_split(byte):
+def bin(number):
+    if not isinstance(number, int):
+        raise TypeError('the number must be int type')
+
+    bit_length = len(bin(number)[2:])
+    bit_array = [0] * (((bit_length // 8) + 1) * 8)
+
+    for _bit_index in range(bit_length):
+        bit_array[_bit_index] = number & 0x1
+        number = number >> 1
+
+    return bit_array
+
+def string_to_bin(string):
     pass
+
+def ws_frame_mask_key():
+    # 0x00 - 0xFF = 1byte(8 bit)
+    # 4 * 8 = 32 bit
+    return utils.random_bytes_string(4, start = 0x00, stop = 0xff)

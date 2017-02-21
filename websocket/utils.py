@@ -60,7 +60,7 @@ def ws_accept_key(key):
 
 # a nonce consisting of a randomly selected 16-byte value
 # 1-byte(0 - 127), not 0 - 255
-def _random_bytes_string(string_length, start = 0, stop = 0x7f, encoding = 'utf-8'):
+def random_bytes_string(string_length, start = 0, stop = 0x7f, encoding = 'utf-8'):
     rst_string = b''
     for _ in range(string_length):
         rst_string += chr(random.randint(start, stop)).encode(encoding)
@@ -71,7 +71,7 @@ def _random_bytes_string(string_length, start = 0, stop = 0x7f, encoding = 'utf-
 # been base64-encoded (see Section 4 of [RFC4648]).  The nonce
 # MUST be selected randomly for each connection.
 def ws_generate_key():
-    random_16byte_string = _random_bytes_string(16)
+    random_16byte_string = random_bytes_string(16)
     return base64.b64encode(random_16byte_string)
 
 # A |Sec-WebSocket-Key| header field with a base64-encoded

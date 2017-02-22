@@ -122,15 +122,19 @@ Application data:  y bytes
       data".
 
 '''
+import abc
+import socket
 import struct
 from websocket import utils
 
-def bin(number):
+# 0x1 = 0 0 0 0 0 0 0 1 => [ 1, 0, 0, 0, 0, 0, 0, 0 ]
+# 0x2 = 0 0 0 0 0 0 1 0 => [ 0, 1, 0, 0, 0, 0, 0, 0 ]
+def number_to_bit_array(number):
     if not isinstance(number, int):
         raise TypeError('the number must be int type')
 
     bit_length = len(bin(number)[2:])
-    bit_array = [0] * (((bit_length // 8) + 1) * 8)
+    bit_array = [0] * (((bit_length // 8) + (0 if (bit_length % 8 == 0) else 1)) * 8)
 
     for _bit_index in range(bit_length):
         bit_array[_bit_index] = number & 0x1
@@ -138,10 +142,202 @@ def bin(number):
 
     return bit_array
 
-def string_to_bin(string):
-    pass
+def string_to_bit_array(string):
+    return number_to_bit_array(int(utils.to_bytes(string).hex(), 16))[::-1]
 
-def ws_frame_mask_key():
+def bit_array_to_octet_array(bit_array):
+    if not isinstance(bit_array, list):
+        raise KeyError('bit array must be list type')
+    else:
+        if len(bit_array) % 8 != 0:
+            raise RuntimeError('bit array is invalid list')
+
+    return [ tuple(bit_array[oi * 8:(oi + 1) * 8]) for oi in range(len(bit_array) // 8) ]
+
+def string_to_octet_array(string):
+    return bit_array_to_octet_array(string_to_bit_array(string))
+
+def bin_to_number(bin_string):
+    return int(bin_string, 2)
+
+def number_to_byte_string(number):
+    if not isinstance(number, int):
+        raise KeyError('the number is not int type')
+
+    byte_string_rst = b''
+    while number:
+        byte_string_rst += struct.pack('!B', number & 0xff)
+        number >>= 8
+    return byte_string_rst
+
+def bit_array_to_bin_string(bit_array):
+    if not isinstance(bit_array, (list, tuple)):
+        raise KeyError('bit array is not list type')
+
+    bit_string = ''
+    for bit in bit_array:
+        bit_string += str(bit)
+    return utils.to_bytes(bit_string)
+
+def octet_to_number(octet):
+    return int(''.join([ str(bit) for bit in octet ]), 2)
+
+def ws_generate_frame_mask_key():
+    # 2 ^ 4 = 16 -> 0x10
+    # 0xF = 15 -> 4-bit
     # 0x00 - 0xFF = 1byte(8 bit)
     # 4 * 8 = 32 bit
     return utils.random_bytes_string(4, start = 0x00, stop = 0xff)
+
+def ws_transform_payload_data(data, mask_key):
+    if not isinstance(mask_key, (int)):
+        if isinstance(mask_key, str):
+            mask_key = int(mask_key, 16)
+        else:
+            raise KeyError('mask key must be hex int')
+    if not isinstance(data, (str, bytes)):
+        raise KeyError('data must be str or bytes type')
+
+    mask_key_octet = {
+        0: (mask_key & 0xff000000) >> 24,
+        1: (mask_key & 0x00ff0000) >> 16,
+        2: (mask_key & 0x0000ff00) >> 8,
+        3: mask_key & 0x000000ff
+    }
+
+    transformed_string = b''
+    for index, value in enumerate(data):
+        transformed_string += struct.pack('!B', (value ^ mask_key_octet[index % 4]) & 0xff)
+    return transformed_string
+
+class Frame_Base(object, metaclass = abc.ABCMeta):
+
+    def __init__(self):
+        pass
+
+    @property
+    def flag_fin(self):
+        return True
+
+    @property
+    def flag_rsv1(self):
+        return 0
+
+    @property
+    def flag_rsv2(self):
+        return 0
+
+    @property
+    def flag_rsv3(self):
+        return 0
+
+    @property
+    def flag_opcode(self):
+        return 0
+
+    @property
+    def flag_mask(self):
+        return True
+    
+    @property
+    def payload_data_length(self):
+        return 0
+
+    @property
+    def extension_data_length(self):
+        return 0
+
+    @property
+    def application_data_length(self):
+        return 0
+
+    @property
+    def mask_key(self):
+        return b''
+
+    @property
+    def payload_data(self):
+        return b''
+    
+    @property
+    def extension_data(self):
+        return b''
+
+    @property
+    def application_data(self):
+        return b''
+
+class Client_To_Server_Frame(Frame_Base):
+    pass
+
+class Server_To_Client_Frame(Frame_Base):
+    pass
+
+class Frame_Parser(object):
+
+    def __init__(self):
+        pass
+
+def create_c2s_frame():
+    pass
+
+def create_s2c_frame():
+    pass
+
+def frame_parser():
+    pass
+
+PAYLOAD_LENGTH_16 = -1
+PAYLOAD_LENGTH_64 = -2
+
+# the most significant bit MUST be 0
+def parse_frame_length(frame_header):
+    if not isinstance(frame_header, (str, bytes)):
+        raise KeyError('frame_header must be str or bytes type')
+    octet_array = string_to_octet_array(frame_header)
+    if len(octet_array) < 2:
+        raise KeyError('frame_header invalid')
+
+    # first bit is MASK flag
+    payload_length = octet_to_number(octet_array[1][1:])
+    if payload_length <= 125:
+        return payload_length
+    elif payload_length == 126:
+        if len(octet_array) < 4:
+            return PAYLOAD_LENGTH_16
+        else:
+            return octet_to_number(utils.flatten_list(octet_array[2:5]))
+    elif payload_length == 127:
+        if len(octet_array) < 4:
+            return PAYLOAD_LENGTH_64
+        else:
+            return octet_to_number(utils.flatten_list(octet_array[2:11]))
+
+def receive_single_frame(socket_fd):
+    if not isinstance(socket_fd, socket.socket):
+        raise KeyError('socket_fd must be socket.socket instance')
+    frame_contents = socket_fd.recv(2)
+    frame_length = parse_frame_length(frame_contents)
+
+    print('parse_frame_length return value', frame_length)
+
+    if frame_length is PAYLOAD_LENGTH_16:
+        frame_contents += socket_fd.recv(2)
+    elif frame_length is PAYLOAD_LENGTH_64:
+        frame_contents += socket_fd.recv(8)
+    frame_length = parse_frame_length(frame_contents)
+    if frame_length < 0:
+        raise RuntimeError('receive_single_frame method internal error')
+
+    print('parse_frame_length again return value', frame_length)
+
+    # Client-To-Server have Mask-Key(4Bytes)
+    octet_array = string_to_octet_array(frame_contents)
+    if (octet_array[1][0] == 1):
+        frame_length += 4
+
+    print('Client-To-Server check', frame_length)
+
+    frame_contents += socket_fd.recv(frame_length)
+    return frame_contents
+

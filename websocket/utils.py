@@ -97,3 +97,10 @@ def http_header_parser(raw_header):
 
 def http_header_generate(status_code, header_fields, http_version = HTTP_VERSION_1_1, status_description = None):
     pass
+
+def flatten_list(array):
+    for item in array:
+        if isinstance(item, (tuple, list)):
+            yield from flatten_list(item)
+        else:
+            yield item

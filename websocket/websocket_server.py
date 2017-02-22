@@ -2,9 +2,6 @@
 #
 # Copyright (C) 2017 ShadowMan
 #
-import abc
-import socket
-from websocket import utils
 
 # An HTTP/1.1 or higher GET request, including a "Request-URI"
 
@@ -71,6 +68,89 @@ from websocket import utils
 # A server MUST NOT mask any frames that it sends to
 # the client.  A client MUST close a connection if it detects a masked
 # frame.
+
+# An unfragmented message consists of a single frame with the FIN
+# bit set (Section 5.2) and an opcode other than 0.
+
+# A fragmented message consists of a single frame with the FIN bit
+# clear and an opcode other than 0, followed by zero or more frames
+# with the FIN bit clear and the opcode set to 0, and terminated by
+# a single frame with the FIN bit set and an opcode of 0
+
+# For a text message sent as three fragments, the first
+# fragment would have an opcode of 0x1 and a FIN bit clear, the
+# second fragment would have an opcode of 0x0 and a FIN bit clear,
+# and the third fragment would have an opcode of 0x0 and a FIN bit
+# that is set.
+#
+'''
+
+First fragment
+
+    FIN = 0, opcode = 1     # opcode = 1(text frame)
+
+
+Second fragment
+
+    FIN = 0, opcode = 0     # opcode = 0(continuation frame)
+
+
+Third fragment
+
+    FIN = 1, opcode = 0     # opcode = 0(continuation frame)
+
+'''
+
+# Control frames (see Section 5.5) MAY be injected in the middle of
+# a fragmented message.  Control frames themselves MUST NOT be
+# fragmented.
+
+# Message fragments MUST be delivered to the recipient in the order
+# sent by the sender.
+
+# The fragments of one message MUST NOT be interleaved between the
+# fragments of another message unless an extension has been
+# negotiated that can interpret the interleaving.
+
+# An endpoint MUST be capable of handling control frames in the
+# middle of a fragmented message.
+
+# A sender MAY create fragments of any size for non-control
+# messages.
+
+# Clients and servers MUST support receiving both fragmented and
+# unfragmented messages.
+
+# As control frames cannot be fragmented, an intermediary MUST NOT
+# attempt to change the fragmentation of a control frame.
+
+# An intermediary MUST NOT change the fragmentation of a message if
+# any reserved bit values are used and the meaning of these values
+# is not known to the intermediary.
+
+# IMPLEMENTATION NOTE: In the absence of any extension, a receiver
+# doesn't have to buffer the whole frame in order to process it.  For
+# example, if a streaming API is used, a part of a frame can be
+# delivered to the application.  However, note that this assumption
+# might not hold true for all future WebSocket extensions.
+
+# All control frames MUST have a payload length of 125 bytes or less
+# and MUST NOT be fragmented.
+
+
+#  Sending and Receiving Data
+
+# The endpoint MUST ensure the WebSocket connection is in the OPEN
+# state (cf. Sections 4.1 and 4.2.2.)  If at any point the state of
+# the WebSocket connection changes, the endpoint MUST abort the
+# following steps.
+
+# If the data is being sent by the client, the frame(s) MUST be
+# masked as defined in Section 5.3.
+
+import abc
+import socket
+from websocket import utils
 
 class WebSocket_Server_Base(object, metaclass = abc.ABCMeta):
 

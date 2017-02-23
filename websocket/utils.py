@@ -2,9 +2,12 @@
 #
 # Copyright (C) 2017 ShadowMan
 #
+import math
 import base64
-import hashlib
 import random
+import socket
+import struct
+import hashlib
 from collections import namedtuple
 
 # Http version 1.1
@@ -104,3 +107,91 @@ def flatten_list(array):
             yield from flatten_list(item)
         else:
             yield item
+
+# 0x1 = 0 0 0 0 0 0 0 1 => [ 1, 0, 0, 0, 0, 0, 0, 0 ]
+# 0x2 = 0 0 0 0 0 0 1 0 => [ 0, 1, 0, 0, 0, 0, 0, 0 ]
+def number_to_bit_array(number, pad_byte = 1):
+    if not isinstance(number, int):
+        raise TypeError('the number must be int type')
+
+    bit_length = len(bin(number)[2:])
+    # if number is 0, fill to 1-byte
+    if number is 0:
+        bit_length = pad_byte * 8
+    bit_array = [0] * (((bit_length // 8) + (0 if (bit_length % 8 == 0) else 1)) * 8)
+
+    for _bit_index in range(bit_length):
+        bit_array[_bit_index] = number & 0x1
+        number = number >> 1
+    return bit_array
+
+def string_to_bit_array(string):
+    bit_array = []
+    for char in string:
+        bit_array += number_to_bit_array(char)[::-1]
+    return bit_array
+    # return number_to_bit_array(int(to_bytes(string).hex(), 16))[::-1]
+
+def bit_array_to_octet_array(bit_array):
+    if not isinstance(bit_array, list):
+        raise KeyError('bit array must be list type')
+    else:
+        if len(bit_array) % 8 != 0:
+            raise RuntimeError('bit array is invalid list')
+
+    return [ tuple(bit_array[oi * 8:(oi + 1) * 8]) for oi in range(len(bit_array) // 8) ]
+
+def string_to_octet_array(string):
+    return bit_array_to_octet_array(string_to_bit_array(string))
+
+def binary_string_to_number(binary_string):
+    return int(binary_string, 2)
+
+def number_to_byte_string(number):
+    if not isinstance(number, int):
+        raise KeyError('the number is not int type')
+
+    byte_string_rst = b''
+    while number:
+        byte_string_rst += struct.pack('!B', number & 0xff)
+        number >>= 8
+    if number is 0:
+        byte_string_rst = b'\x00'
+    return byte_string_rst
+
+def bit_array_to_binary_string(bit_array):
+    if not isinstance(bit_array, (list, tuple)):
+        raise KeyError('bit array is not list type')
+
+    bit_string = ''
+    for bit in bit_array:
+        bit_string += str(bit)
+    return to_bytes(bit_string)
+
+def octet_to_number(octet):
+    return int(''.join([ str(b) for b in octet ]), 2)
+
+def bit_array_to_string(bit_array):
+    if not isinstance(bit_array, (list, tuple)):
+        raise KeyError('bit array is not list type')
+
+    string_rst = b''
+    binary_string = bit_array_to_binary_string(bit_array)
+    # get 32-bits data
+    for index in range(0, math.floor(len(binary_string) / 32) * 32, 32):
+        string_rst += number_to_byte_string(
+            # network byte-order -> native byte-order
+            socket.ntohl(binary_string_to_number(binary_string[index:index + 32]))
+        )
+    if len(binary_string) % 32 != 0:
+        for index in range(math.floor(len(binary_string) / 32) * 32, len(binary_string), 8):
+            string_rst += number_to_byte_string(
+                binary_string_to_number(binary_string[index:index + 8])
+            )
+    return string_rst
+
+def octet_array_to_string(octet_array):
+    string_rst = b''
+    for octet in octet_array:
+        string_rst += number_to_byte_string(octet_to_number(octet))
+    return string_rst

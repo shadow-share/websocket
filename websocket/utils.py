@@ -116,7 +116,7 @@ def number_to_bit_array(number, pad_byte = 1):
 
     bit_length = len(bin(number)[2:])
     # if number is 0, fill to 1-byte
-    if number is 0:
+    if bit_length is 0:
         bit_length = pad_byte * 8
     bit_array = [0] * (((bit_length // 8) + (0 if (bit_length % 8 == 0) else 1)) * 8)
 
@@ -152,11 +152,12 @@ def number_to_byte_string(number):
         raise KeyError('the number is not int type')
 
     byte_string_rst = b''
-    while number:
-        byte_string_rst += struct.pack('!B', number & 0xff)
-        number >>= 8
     if number is 0:
         byte_string_rst = b'\x00'
+    else:
+        while number:
+            byte_string_rst += struct.pack('!B', number & 0xff)
+            number >>= 8
     return byte_string_rst
 
 def bit_array_to_binary_string(bit_array):

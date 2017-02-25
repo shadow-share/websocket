@@ -125,6 +125,7 @@ Application data:  y bytes
 import abc
 import socket
 import struct
+import selector
 from websocket import utils
 
 def ws_generate_frame_mask_key():
@@ -222,6 +223,25 @@ class Frame_Base(object, metaclass = abc.ABCMeta):
         self._octet_array = utils.bit_array_to_octet_array(raw_frame_bit_array)
         self.parse_octet()
 
+        self._global_frame_type = {
+            0x0: b'Continuation Frame',
+            0x1: b'Text Frame',
+            0x2: b'Binary Frame',
+            0x3: b'Non-Control Frame',
+            0x4: b'Non-Control Frame',
+            0x5: b'Non-Control Frame',
+            0x6: b'Non-Control Frame',
+            0x7: b'Non-Control Frame',
+            0x8: b'Close Frame',
+            0x9: b'Ping Frame',
+            0xA: b'Pong Frame',
+            0xB: b'Control Frame',
+            0xC: b'Control Frame',
+            0xD: b'Control Frame',
+            0xE: b'Control Frame',
+            0xF: b'Control Frame',
+        }
+
     def parse_octet(self):
         # first byte(8-bits)
         # +-+-+-+-+-------+
@@ -307,16 +327,61 @@ class Frame_Base(object, metaclass = abc.ABCMeta):
     @property
     def payload_data(self):
         return self._payload_data
-
-
-class Client_To_Server_Frame(Frame_Base):
-    pass
-
-class Server_To_Client_Frame(Frame_Base):
-    pass
+    @property
+    def frame_type(self):
+        return self._global_frame_type[self._opcode_flag]
 
 class Frame_Parser(Frame_Base):
 
     def __init__(self, socket_fd):
         bit_array = utils.string_to_bit_array(receive_single_frame(socket_fd))
         super(Frame_Parser, self).__init__(bit_array)
+
+class Frame_Generator(object):
+
+    def __init__(self):
+        self._flag_fin = 1
+        self._flag_rsv1 = 0
+        self._flag_rsv2 = 0
+        self._flag_rsv3 = 0
+
+        self._flag_mask = 0
+        self._mask_key = False
+
+    def enable_fin(self):
+        self._flag_fin = 1
+        return self
+
+    def disable_fin(self):
+        self._flag_fin = 0
+        return self
+
+    def enable_rsv1(self):
+        self._flag_rsv1 = 1
+        return self
+
+    def disable_rsv1(self):
+        self._flag_rsv1 = 0
+        return self
+
+    def enable_rsv2(self):
+        self._flag_rsv2 = 1
+        return self
+
+    def disable_rsv2(self):
+        self._flag_rsv2 = 0
+        return self
+
+    def enable_rsv3(self):
+        self._flag_rsv3 = 1
+        return self
+
+    def disable_rsv3(self):
+        self._flag_rsv3 = 0
+        return self
+
+    def set_mask_key(self, mask_key):
+        self._flag_mask = 1
+        self._mask_key = mask_key
+        return self
+

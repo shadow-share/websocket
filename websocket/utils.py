@@ -10,18 +10,14 @@ import struct
 import hashlib
 from collections import namedtuple
 
-# Http version 1.1
-# The method of the request MUST be GET, and the HTTP version MUST
-# be at least 1.1.
-HTTP_VERSION_1_1 = '1.1'
-
 # Response status code description
 _response_status_code_description = {
-    400: 'Bad Request',
-    401: '',
-    403: 'Forbidden',
-    404: 'Not Found',
-    426: 'Upgrade Required'
+    101: b'Switching Protocols',
+    400: b'Bad Request',
+    401: b'',
+    403: b'Forbidden',
+    404: b'Not Found',
+    426: b'Upgrade Required'
 }
 
 # Request line namedtuple
@@ -98,8 +94,17 @@ def http_header_parser(raw_header):
 
     return Request_Header(request_line, header_fields)
 
-def http_header_generate(status_code, header_fields, http_version = HTTP_VERSION_1_1, status_description = None):
-    pass
+def http_header_generate(status_code, header_fields, status_description = None):
+    response = b''
+    if status_code in _response_status_code_description:
+        status_description = \
+            _response_status_code_description[status_code] if status_description == None else status_description
+    response += b'HTTP/1.1' + b' ' + to_bytes(str(status_code)) + b' ' + status_description + b'\r\n'
+
+    for field in header_fields:
+        response += field.key + b': ' + field.value + b'\r\n'
+    response += b'\r\n'
+    return response
 
 def flatten_list(array):
     for item in array:

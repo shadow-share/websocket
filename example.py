@@ -7,20 +7,8 @@ import sys
 import random
 import socket
 import struct
-from websocket import utils, frame
+from websocket import utils, frame, websocket_server
 
-serv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+ws_server = websocket_server.create_websocket_server(host = '127.0.0.1', port = 8999)
 
-serv.bind(('127.0.0.1', 8999))
-serv.listen(4)
-
-while (True):
-    cli, addr = serv.accept()
-    print(cli)
-    frame = frame.Frame_Parser(cli)
-    print(frame.flag_fin, frame.flag_rsv1, frame.flag_rsv2, frame.flag_rsv3, frame.flag_opcode)
-    print(frame._mask_flag, frame.payload_data_length)
-    print(frame.mask_key)
-    print(frame.payload_data)
-    cli.close()
-    break
+ws_server.open_server()

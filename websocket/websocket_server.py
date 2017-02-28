@@ -149,17 +149,84 @@ Third fragment
 # masked as defined in Section 5.3.
 
 import abc
+import select
 import socket
-from websocket import utils
+from websocket import utils, frame
 
 class WebSocket_Server_Base(object, metaclass = abc.ABCMeta):
 
-    def __init__(self):
+    def __init__(self, host, port):
+        self._client_list = {}
+        self._server_address = (host, port)
+
+    def open_server(self):
+        self._server_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+        self._server_fd.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self._server_fd.setblocking(False)
+
+        self._server_fd.bind(self._server_address)
+        self._server_fd.listen(16)
+        self._select_loop()
+
+    def _select_loop(self):
+        self._rl, self._wl, self._xl = [ self._server_fd ], [], []
+
+        while True:
+            rl, wl, el = select.select(self._rl, self._wl, self._xl)
+
+            self._read_list_handler(rl)
+            self._write_list_handler(wl)
+            self._error_list_handler(el)
+
+    def _read_list_handler(self, rl):
+        for read_fd in rl:
+            if read_fd == self._server_fd:
+                self._accept_client()
+            else:
+                if read_fd in self._client_list:
+                    f = frame.Frame_Parser(read_fd)
+                else:
+                    request = utils.http_header_parser(read_fd.recv(1024))
+                    ws_key = None
+
+                    print(request.lead)
+                    for field in request.fields:
+                        if field.key == 'Sec-WebSocket-Key':
+                            ws_key = field.value
+                        print(field)
+
+                    response_headers = [
+                        utils.Header_Field(b'Upgrade', b'websocket'),
+                        utils.Header_Field(b'Connection', b'Upgrade'),
+                        utils.Header_Field(b'Sec-WebSocket-Accept', utils.ws_accept_key(ws_key))
+                    ]
+                    response = utils.http_header_generate(101, response_headers)
+                    print(response)
+                    read_fd.send(response)
+
+    def _write_list_handler(self, wl):
         pass
 
+    def _error_list_handler(self, el):
+        pass
 
-def create_websocket_server():
-    pass
+    def _accept_client(self):
+        client_fd, client_address = self._server_fd.accept()
+
+        self._rl.append(client_fd)
+        self._wl.append(client_fd)
+
+        print(client_address, 'is connected')
+
+class WebSocket_Simple_Server(WebSocket_Server_Base):
+    
+    def __init__(self, host, port):
+        super(WebSocket_Simple_Server, self).__init__(host, port)
+
+
+def create_websocket_server(host = 'localhost', port = 8999, debug = False):
+    return WebSocket_Simple_Server(host, port)
 
 def create_websocket_event_server():
     pass

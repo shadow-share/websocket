@@ -7,20 +7,17 @@ import base64
 import random
 import socket
 import struct
-import hashlib
-from collections import namedtuple
-
-# GUID String
-_const_guid_string = b'258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
 
 def to_string(byte_string, encoding = 'utf-8'):
     if not isinstance(byte_string, str):
-        if hasattr(bytes, 'decode'):
+        if hasattr(byte_string, 'decode'):
             return byte_string.decode(encoding)
         else:
-            raise KeyError('the byte_string has\'t decode method')
-    else:
+            raise TypeError('the byte_string has\'t decode method')
+    elif isinstance(byte_string, bytes):
         return byte_string
+    else:
+        raise TypeError('the byte_string is invalid')
 
 
 def to_bytes(string, encoding = 'utf-8'):
@@ -29,57 +26,39 @@ def to_bytes(string, encoding = 'utf-8'):
             return string.encode(encoding)
         else:
             raise KeyError('the string has\'t encode method')
-    else:
+    elif isinstance(string, bytes):
         return string
-
-
-def ws_accept_key(key):
-    key = to_bytes(key)
-    hash_sha1 = hashlib.sha1(key + _const_guid_string)
-    hash_sha1_rst = hash_sha1.digest()
-
-    return base64.b64encode(hash_sha1_rst)
+    else:
+        raise TypeError('the string is invalid')
 
 
 # a nonce consisting of a randomly selected 16-byte value
 # 1-byte(0 - 127), not 0 - 255
 def random_bytes_string(string_length, start = 0, stop = 0x7f, encoding = 'utf-8'):
-    rst_string = b''
+    rst_string = ''
     for _ in range(string_length):
-        rst_string += chr(random.randint(start, stop)).encode(encoding)
-    return rst_string
-
-
-# The value of this header field MUST be a
-# nonce consisting of a randomly selected 16-byte value that has
-# been base64-encoded (see Section 4 of [RFC4648]).  The nonce
-# MUST be selected randomly for each connection.
-def ws_generate_key():
-    random_16byte_string = random_bytes_string(16)
-    return base64.b64encode(random_16byte_string)
-
-
-# A |Sec-WebSocket-Key| header field with a base64-encoded
-# value that, when decoded, is 16 bytes in length.
-def ws_check_key_length(key):
-    if isinstance(key, (str, bytes)):
-        return _base64_decode_length(key) is 16
-    raise KeyError('the key must be str or bytes')
+        rst_string += chr(random.randint(start, stop))
+    return rst_string.encode(encoding)
 
 
 # check base64.b64decode string length
-def _base64_decode_length(key):
+def base64_decode_length(key):
     if isinstance(key, (str, bytes)):
         return len(base64.b64decode(key))
     raise KeyError('the key must be str or bytes')
 
-# generator
+
+# [ 1, 2, (3, 4), [ 5, (6, 7), 8 ], 9 ] =>
+# [ 1, 2, 3, 4, 5, 6, 7, 8, 9 ]
 def flatten_list(array):
-    for item in array:
-        if isinstance(item, (tuple, list)):
-            yield from flatten_list(item)
-        else:
-            yield item
+    def _flatten_generator(array):
+        for item in array:
+            if isinstance(item, (tuple, list)):
+                yield from flatten_list(item)
+            else:
+                yield item
+    return list(_flatten_generator(array))
+
 
 # 0x1 = 0 0 0 0 0 0 0 1 => [ 1, 0, 0, 0, 0, 0, 0, 0 ]
 # 0x2 = 0 0 0 0 0 0 1 0 => [ 0, 1, 0, 0, 0, 0, 0, 0 ]
@@ -101,7 +80,7 @@ def number_to_bit_array(number, pad_byte = 1):
 
 def string_to_bit_array(string):
     bit_array = []
-    for char in string:
+    for char in to_bytes(string):
         bit_array += number_to_bit_array(char)[::-1]
     return bit_array
     # return number_to_bit_array(int(to_bytes(string).hex(), 16))[::-1]
@@ -113,7 +92,6 @@ def bit_array_to_octet_array(bit_array):
     else:
         if len(bit_array) % 8 != 0:
             raise RuntimeError('bit array is invalid list')
-
     return [ tuple(bit_array[oi * 8:(oi + 1) * 8]) for oi in range(len(bit_array) // 8) ]
 
 

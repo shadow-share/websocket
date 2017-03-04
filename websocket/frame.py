@@ -125,15 +125,8 @@ Application data:  y bytes
 import abc
 import socket
 import struct
-import selector
 from websocket import utils
 
-def ws_generate_frame_mask_key():
-    # 2 ^ 4 = 16 -> 0x10
-    # 0xF = 15 -> 4-bit
-    # 0x00 - 0xFF = 1byte(8 bit)
-    # 4 * 8 = 32 bit
-    return utils.random_bytes_string(4, start = 0x00, stop = 0xff)
 
 def ws_transform_payload_data(data, mask_key):
     if not isinstance(mask_key, (int)):
@@ -155,7 +148,7 @@ def ws_transform_payload_data(data, mask_key):
     }
 
     transformed_string = b''
-    for index, value in enumerate(data):
+    for index, value in enumerate(utils.to_bytes(data)):
         transformed_string += struct.pack('!B', (value ^ mask_key_octet[index % 4]) & 0xff)
     return transformed_string
 
@@ -331,11 +324,13 @@ class Frame_Base(object, metaclass = abc.ABCMeta):
     def frame_type(self):
         return self._global_frame_type[self._opcode_flag]
 
+
 class Frame_Parser(Frame_Base):
 
     def __init__(self, socket_fd):
         bit_array = utils.string_to_bit_array(receive_single_frame(socket_fd))
         super(Frame_Parser, self).__init__(bit_array)
+
 
 class Frame_Generator(object):
 

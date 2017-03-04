@@ -151,32 +151,8 @@ Third fragment
 import abc
 import select
 import socket
+import logging
 from websocket import utils, frame
-
-
-class WebSocket_Protocol(object, metaclass = abc.ABCMeta):
-
-    def __init__(self):
-        pass
-
-    @abc.abstractclassmethod
-    def on_connect(self):
-        pass
-
-    @abc.abstractclassmethod
-    def on_message(self, message):
-        pass
-
-    @abc.abstractclassmethod
-    def on_close(self):
-        pass
-
-    @abc.abstractclassmethod
-    def on_error(self):
-        pass
-
-    def on_receive_frame(self, raw_frame):
-        pass
 
 class WebSocket_Server_Base(object, metaclass = abc.ABCMeta):
 
@@ -205,7 +181,12 @@ class WebSocket_Server_Base(object, metaclass = abc.ABCMeta):
             self._error_list_handler(el)
 
     def _read_list_handler(self, rl):
-        pass
+        for read_fd in rl:
+            if read_fd == self._server_fd:
+                self._accept_client()
+            else:
+                # is http-request or ws-frame?
+                pass
 
     def _write_list_handler(self, wl):
         pass
@@ -219,36 +200,16 @@ class WebSocket_Server_Base(object, metaclass = abc.ABCMeta):
         self._rl.append(client_fd)
         self._wl.append(client_fd)
 
+        logging.info('Client({}, {}) connected'.format(*client_address))
+
 
 class WebSocket_Simple_Server(WebSocket_Server_Base):
     
-    def __init__(self, host, port, *, handler):
+    def __init__(self, host, port, *, handler = None):
         super(WebSocket_Simple_Server, self).__init__(host, port)
 
-        if isinstance(handler, WebSocket_Protocol):
-            self.on_connect(handler.on_connect)
-            self.on_message(handler.on_message)
-            self.on_close(handler.on_close)
-            self.on_error(handler.on_error)
 
-    def on_connect(self, handler):
-        if callable(handler):
-            handler()
-
-    def on_message(self, handler):
-        if callable(handler):
-            handler()
-
-    def on_close(self, handler):
-        if callable(handler):
-            handler()
-
-    def on_error(self, handler):
-        if callable(handler):
-            handler()
-
-    def set_interval(self, timeout, handler):
-        pass
+logging.basicConfig(level = logging.INFO)
 
 def create_websocket_server(host = 'localhost', port = 8999, debug = False):
     return WebSocket_Simple_Server(host, port)

@@ -29,7 +29,7 @@ _response_status_description = {
 }
 
 # Http methods
-_http_methods = [ b'GET', b'POST', b'PUT', b'DELETE', b'UPDATE', b'HEAD' ]
+HTTP_METHODS = [b'GET', b'POST', b'PUT', b'DELETE', b'UPDATE', b'HEAD']
 # GET
 HTTP_METHOD_GET = b'GET'
 # POST
@@ -90,7 +90,7 @@ class HttpRequest(HttpMessage):
         if isinstance(request_method, (str, bytes)):
             self._request_method = utils.to_bytes(request_method.upper())
 
-            if self._request_method not in _http_methods:
+            if self._request_method not in HTTP_METHODS:
                 raise KeyError('the request method \'{}\' is invalid'.format(request_method))
         else:
             raise TypeError('request method must be str or bytes type')

@@ -152,9 +152,12 @@ import abc
 import select
 import socket
 import logging
-from websocket import utils, frame
+from websocket import utils, frame, http
 
 class WebSocket_Server_Base(object, metaclass = abc.ABCMeta):
+
+    _OP_RD = 0x1
+    _OP_WR = 0x2
 
     def __init__(self, host, port):
         self._client_list = {}
@@ -185,8 +188,11 @@ class WebSocket_Server_Base(object, metaclass = abc.ABCMeta):
             if read_fd == self._server_fd:
                 self._accept_client()
             else:
-                # is http-request or ws-frame?
-                pass
+                if read_fd in self._client_list:
+                    pass
+                else:
+                    # Received data is an HTTP request
+                    self._client_list[read_fd] = (read_fd, self._OP_RD)
 
     def _write_list_handler(self, wl):
         pass
@@ -202,6 +208,26 @@ class WebSocket_Server_Base(object, metaclass = abc.ABCMeta):
 
         logging.info('Client({}, {}) connected'.format(*client_address))
 
+    def _accept_request(self, socket_fd, operator):
+        pass
+
+    # Minimum websocket-frame(control frame) size is 2 bytes
+    def _judge_request(self, socket_fd):
+        peek_data = socket_fd.recv(1, socket.MSG_PEEK)
+        peek_data_octet = utils.string_to_octet_array(peek_data)
+
+        # FIN = 1, 0b1******* >= 128, ASCII(0-127)
+        if peek_data_octet[0] == 1:
+            return False
+        # FIN = 0, opcode >= 8(control frames), is impossible
+        if utils.octet_to_number(peek_data_octet[4:]) > 0x8:
+            return True
+        # FIN = 0, 0 <= opcode <= 7(non-control frames)
+        # RSV1 = 1
+        if peek_data_octet[1] == 1:
+            return True
+
+        return False
 
 class WebSocket_Simple_Server(WebSocket_Server_Base):
     

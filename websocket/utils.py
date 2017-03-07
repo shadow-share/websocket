@@ -103,13 +103,13 @@ def binary_string_to_number(binary_string):
     return int(binary_string, 2)
 
 
-def number_to_byte_string(number):
+def number_to_byte_string(number, pad_byte_count = 1):
     if not isinstance(number, int):
         raise KeyError('the number is not int type')
 
     byte_string_rst = b''
     if number is 0:
-        byte_string_rst = b'\x00'
+        byte_string_rst = b'\x00' * pad_byte_count
     else:
         while number:
             byte_string_rst += struct.pack('!B', number & 0xff)

@@ -152,7 +152,8 @@ import abc
 import select
 import socket
 import logging
-from websocket import utils, frame, http
+from websocket import utils, frame, http, websocket_utils,\
+    distributer
 
 class WebSocket_Server_Base(object, metaclass = abc.ABCMeta):
 
@@ -167,7 +168,7 @@ class WebSocket_Server_Base(object, metaclass = abc.ABCMeta):
         self._server_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
         self._server_fd.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self._server_fd.setblocking(False)
+        # self._server_fd.setblocking(False)
 
         self._server_fd.bind(self._server_address)
         self._server_fd.listen(16)
@@ -189,10 +190,10 @@ class WebSocket_Server_Base(object, metaclass = abc.ABCMeta):
                 self._accept_client()
             else:
                 if read_fd in self._client_list:
-                    pass
+                    self._client_list[read_fd].distribute(frame.Frame_Parser(read_fd))
                 else:
                     # Received data is an HTTP request
-                    self._client_list[read_fd] = (read_fd, self._OP_RD)
+                    self._client_list[read_fd] = distributer.Distributer(read_fd)
 
     def _write_list_handler(self, wl):
         pass
@@ -207,9 +208,6 @@ class WebSocket_Server_Base(object, metaclass = abc.ABCMeta):
         self._wl.append(client_fd)
 
         logging.info('Client({}, {}) connected'.format(*client_address))
-
-    def _accept_request(self, socket_fd, operator):
-        pass
 
     # Minimum websocket-frame(control frame) size is 2 bytes
     def _judge_request(self, socket_fd):

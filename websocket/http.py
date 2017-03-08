@@ -4,14 +4,9 @@
 #
 import re
 import abc
-from collections import namedtuple
+from collections import namedtuple, OrderedDict
 from websocket import utils
 
-__all__ = [
-    'HTTP_VERSION_1_1', 'HTTP_VERSION_1_0',
-    'HttpField', 'HttpRequest', 'HttpResponse',
-    'create_http_request', 'create_http_response'
-]
 
 # Http version 1.1
 HTTP_VERSION_1_1 = 1.1
@@ -59,7 +54,7 @@ class HttpField(namedtuple('HttpField', 'key value')):
 class HttpMessage(object, metaclass = abc.ABCMeta):
 
     def __init__(self, *header_fields):
-        self._header_fields = {}
+        self._header_fields = OrderedDict()
 
         for k, v in filter(lambda el: isinstance(el, HttpField), header_fields):
             self._header_fields[utils.to_bytes(k)] = HttpField(utils.to_bytes(k), utils.to_bytes(v))
@@ -251,6 +246,10 @@ def is_http_protocol(raw_data):
 
 def create_header_field(key, value):
     return HttpField(key, value)
+
+
+def create_header_fields(*fields):
+    return [ HttpField(*field) for field in fields ]
 
 
 def factory(raw_data):

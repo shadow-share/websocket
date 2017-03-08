@@ -14,7 +14,7 @@ def to_string(byte_string, encoding = 'utf-8'):
             return byte_string.decode(encoding)
         else:
             raise TypeError('the byte_string has\'t decode method')
-    elif isinstance(byte_string, bytes):
+    elif isinstance(byte_string, str):
         return byte_string
     else:
         raise TypeError('the byte_string is invalid')

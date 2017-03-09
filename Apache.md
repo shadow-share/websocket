@@ -5,8 +5,7 @@ Apache Proxy
 In `httpd.conf`
 
 ```
-LoadModule proxy_module modules/mod_proxy.so
-LoadModule proxy_http_module modules/mod_proxy_http.so
+
 ```
 
 In `httpd-vhosts.conf`

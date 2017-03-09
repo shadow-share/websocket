@@ -152,29 +152,37 @@ import abc
 import select
 import socket
 import logging
+from collections import OrderedDict
 from websocket import utils, frame, http, websocket_utils,\
     distributer
 
 class WebSocket_Server_Base(object, metaclass = abc.ABCMeta):
 
-    _OP_RD = 0x1
-    _OP_WR = 0x2
-
     def __init__(self, host, port):
+        # all handshake client
         self._client_list = {}
+        # Server address information
         self._server_address = (host, port)
+        # Write queue
+        self._write_queue = OrderedDict()
+
 
     def run_forever(self):
+        # Create server socket file descriptor
         self._server_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
+        # Set socket option, REUSEADDR = True
         self._server_fd.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        # self._server_fd.setblocking(False)
-
+        # Set using non-block socket
+        self._server_fd.setblocking(False)
+        # Start server
         self._server_fd.bind(self._server_address)
         self._server_fd.listen(16)
+        # enter the main loop
         self._select_loop()
 
+
     def _select_loop(self):
+        # in the begin, read-list have only server socket
         self._rl, self._wl, self._xl = [ self._server_fd ], [], []
 
         while True:
@@ -183,6 +191,7 @@ class WebSocket_Server_Base(object, metaclass = abc.ABCMeta):
             self._read_list_handler(rl)
             self._write_list_handler(wl)
             self._error_list_handler(el)
+
 
     def _read_list_handler(self, rl):
         for read_fd in rl:
@@ -195,11 +204,17 @@ class WebSocket_Server_Base(object, metaclass = abc.ABCMeta):
                     # Received data is an HTTP request
                     self._client_list[read_fd] = distributer.Distributer(read_fd)
 
+
     def _write_list_handler(self, wl):
-        pass
+        # TODO
+        for ready_write_fd in self._write_queue:
+            if ready_write_fd in wl:
+                ready_write_fd.send(self._write_queue[ready_write_fd])
+
 
     def _error_list_handler(self, el):
         pass
+
 
     def _accept_client(self):
         client_fd, client_address = self._server_fd.accept()
@@ -209,23 +224,6 @@ class WebSocket_Server_Base(object, metaclass = abc.ABCMeta):
 
         logging.info('Client({}, {}) connected'.format(*client_address))
 
-    # Minimum websocket-frame(control frame) size is 2 bytes
-    def _judge_request(self, socket_fd):
-        peek_data = socket_fd.recv(1, socket.MSG_PEEK)
-        peek_data_octet = utils.string_to_octet_array(peek_data)
-
-        # FIN = 1, 0b1******* >= 128, ASCII(0-127)
-        if peek_data_octet[0] == 1:
-            return False
-        # FIN = 0, opcode >= 8(control frames), is impossible
-        if utils.octet_to_number(peek_data_octet[4:]) > 0x8:
-            return True
-        # FIN = 0, 0 <= opcode <= 7(non-control frames)
-        # RSV1 = 1
-        if peek_data_octet[1] == 1:
-            return True
-
-        return False
 
 class WebSocket_Simple_Server(WebSocket_Server_Base):
     

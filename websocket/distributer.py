@@ -10,7 +10,7 @@ from websocket import http, utils, websocket_utils
 
 class Distributer(object):
 
-    def __init__(self, socket_fd):
+    def __init__(self, socket_fd, write_list):
         # Client socket file descriptor
         self._socket_fd = socket_fd
         # Receive data buffer
@@ -25,6 +25,8 @@ class Distributer(object):
         self._error_handler = None
         # On receive/send close-frame execute
         self._close_handler = None
+        # write queue
+        self._write_queue = write_list
         # Accept http-handshake
         self._accept_request()
 
@@ -38,7 +40,8 @@ class Distributer(object):
 
 
     def distribute(self, frame):
-        pass
+        print('[Distribute]', frame)
+        print(frame.payload_data)
 
 
     def _accept_request(self):
@@ -59,8 +62,7 @@ class Distributer(object):
                 (b'Sec-WebSocket-Accept', websocket_utils.ws_accept_key(ws_key.value))
             )
         )
-        print(http_response.pack())
-        self._socket_fd.sendall(http_response.pack())
+        self._write_queue.append(http_response.pack())
 
     def _ws_handshake(self):
         pass

@@ -152,7 +152,7 @@ import abc
 import select
 import socket
 import logging
-from collections import OrderedDict
+from collections import deque, OrderedDict
 from websocket import utils, frame, http, websocket_utils,\
     distributer
 
@@ -199,17 +199,28 @@ class WebSocket_Server_Base(object, metaclass = abc.ABCMeta):
                 self._accept_client()
             else:
                 if read_fd in self._client_list:
-                    self._client_list[read_fd].distribute(frame.Frame_Parser(read_fd))
+                    self._frame_distribute(read_fd, frame.Frame_Parser(read_fd))
                 else:
+                    # write queue for single socket descriptor
+                    self._write_queue[read_fd] = deque()
                     # Received data is an HTTP request
-                    self._client_list[read_fd] = distributer.Distributer(read_fd)
+                    self._client_list[read_fd] = distributer.Distributer(read_fd, self._write_queue[read_fd])
+
+    @abc.abstractclassmethod
+    def _frame_distribute(self, socket_fd, receive_frame):
+        pass
+
+
+    @abc.abstractclassmethod
+    def _send_frame(self, socket_fd, send_frame):
+        pass
 
 
     def _write_list_handler(self, wl):
-        # TODO
         for ready_write_fd in self._write_queue:
             if ready_write_fd in wl:
-                ready_write_fd.send(self._write_queue[ready_write_fd])
+                while len(self._write_queue[ready_write_fd]):
+                    self._send_frame(ready_write_fd, self._write_queue[ready_write_fd].popleft())
 
 
     def _error_list_handler(self, el):
@@ -231,9 +242,19 @@ class WebSocket_Simple_Server(WebSocket_Server_Base):
         super(WebSocket_Simple_Server, self).__init__(host, port)
 
 
-logging.basicConfig(level = logging.INFO)
+    def _frame_distribute(self, socket_fd, receive_frame):
+        self._client_list[socket_fd].distribute(receive_frame)
 
-def create_websocket_server(host = 'localhost', port = 8999, debug = False):
+
+    def _send_frame(self, socket_fd, send_frame):
+        if isinstance(send_frame, frame.Frame_Base):
+            socket_fd.send(send_frame.pack())
+        socket_fd.send(send_frame)
+
+
+def create_websocket_server(host = 'localhost', port = 8999, debug = False, *, logging_level = logging.INFO):
+    logging.basicConfig(level = logging_level)
+
     return WebSocket_Simple_Server(host, port)
 
 

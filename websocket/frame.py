@@ -285,6 +285,10 @@ class Frame_Base(object, metaclass = abc.ABCMeta):
         if self._mask_flag is 1:
             self._payload_data = ws_transform_payload_data(self._payload_data, self._mask_key)
 
+    def pack(self):
+        pass
+
+
     @property
     def flag_fin(self):
         return self._fin_flag
@@ -331,6 +335,13 @@ class Frame_Parser(Frame_Base):
         bit_array = utils.string_to_bit_array(receive_single_frame(socket_fd))
         super(Frame_Parser, self).__init__(bit_array)
 
+    def __str__(self):
+        return '<WebSocket-Frame FIN={} OPCODE={} PayLen={} Mask={}>'.format(
+            self.flag_fin, self.flag_opcode, self.payload_data_length, hex(self.mask_key).upper())
+
+    def __repr__(self):
+        return self.__str__()
+
 
 class Frame_Generator(object):
 
@@ -340,8 +351,14 @@ class Frame_Generator(object):
         self._flag_rsv2 = 0
         self._flag_rsv3 = 0
 
+        # default is text-frame
+        self._flag_opcode = 0x1
+
         self._flag_mask = 0
         self._mask_key = False
+
+        self._payload_data = b''
+        self._payload_data_length = 0
 
     def enable_fin(self):
         self._flag_fin = 1
@@ -379,4 +396,36 @@ class Frame_Generator(object):
         self._flag_mask = 1
         self._mask_key = mask_key
         return self
+
+    def opcode(self, opcode):
+        self._flag_opcode = opcode & 0xF
+        return self
+
+    def pack(self):
+        return b''
+
+    def payload_data(self, contents):
+        self._payload_data = contents
+        self._payload_data_length = len(self._payload_data)
+        return self
+
+
+def generate_ping_frame(from_client = False):
+    pass
+
+
+def generate_pong_frame(from_client = False):
+    pass
+
+
+def generate_text_frame(text, from_client = False):
+    pass
+
+
+def generate_binary_frame(contents, from_client = False):
+    pass
+
+
+def generate_binary_frame_from_file(path_to_file, fro_client = False):
+    pass
 

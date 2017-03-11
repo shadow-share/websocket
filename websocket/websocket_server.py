@@ -154,7 +154,7 @@ import socket
 import logging
 from collections import deque, OrderedDict
 from websocket import utils, frame, http, websocket_utils,\
-    distributer
+    distributer, exceptions
 
 class WebSocket_Server_Base(object, metaclass = abc.ABCMeta):
 
@@ -165,6 +165,18 @@ class WebSocket_Server_Base(object, metaclass = abc.ABCMeta):
         self._server_address = (host, port)
         # Write queue
         self._write_queue = OrderedDict()
+        # handler initialize
+        self._on_connect = None
+        self._on_message = None
+        self._on_close = None
+        self._on_error = None
+
+
+    def set_handler(self, on_connect, on_message, on_close, on_error):
+        self._on_connect = on_connect
+        self._on_message = on_message
+        self._on_close = on_close
+        self._on_error = on_error
 
 
     def run_forever(self):
@@ -183,7 +195,7 @@ class WebSocket_Server_Base(object, metaclass = abc.ABCMeta):
 
     def _select_loop(self):
         # in the begin, read-list have only server socket
-        self._rl, self._wl, self._xl = [ self._server_fd ], [], []
+        self._rl, self._wl, self._xl = deque([ self._server_fd ]), deque(), deque()
 
         while True:
             rl, wl, el = select.select(self._rl, self._wl, self._xl)
@@ -194,19 +206,26 @@ class WebSocket_Server_Base(object, metaclass = abc.ABCMeta):
 
 
     def _read_list_handler(self, rl):
-        for read_fd in rl:
-            if read_fd == self._server_fd:
+        for readable_fd in rl:
+            if readable_fd == self._server_fd:
                 self._accept_client()
             else:
-                if read_fd in self._client_list:
-                    self._frame_distribute(read_fd, frame.Frame_Parser(read_fd))
+                if readable_fd in self._client_list:
+                    self._frame_distribute(readable_fd, frame.Frame_Parser(readable_fd))
                 else:
                     # write queue for single socket descriptor
-                    self._write_queue[read_fd] = deque()
+                    self._write_queue[readable_fd] = deque()
                     # Received data is an HTTP request
-                    self._client_list[read_fd] = distributer.Distributer(read_fd, self._write_queue[read_fd])
+                    self._client_list[readable_fd] = distributer.Distributer(
+                        readable_fd, # socket file descriptor
+                        self._write_queue[readable_fd].append, # send method
+                        self._on_connect, # connect established handler
+                        self._on_message, # message received handler
+                        self._on_close, # connect close handler
+                        self._on_error # error occurs handler
+                    )
 
-    @abc.abstractclassmethod
+
     def _frame_distribute(self, socket_fd, receive_frame):
         pass
 
@@ -217,34 +236,43 @@ class WebSocket_Server_Base(object, metaclass = abc.ABCMeta):
 
 
     def _write_list_handler(self, wl):
-        for ready_write_fd in self._write_queue:
-            if ready_write_fd in wl:
-                while len(self._write_queue[ready_write_fd]):
-                    self._send_frame(ready_write_fd, self._write_queue[ready_write_fd].popleft())
+        for writeable_fd in self._write_queue:
+            if writeable_fd in wl:
+                while len(self._write_queue[writeable_fd]):
+                    self._send_frame(writeable_fd, self._write_queue[writeable_fd].popleft())
 
 
     def _error_list_handler(self, el):
         pass
 
 
-    def _accept_client(self):
-        client_fd, client_address = self._server_fd.accept()
+    def _close_fd(self, socket_fd):
+        self._rl.remove(socket_fd)
+        self._wl.remove(socket_fd)
+        socket_fd.close()
 
+
+    def _accept_client(self):
+        # accept new client
+        client_fd, client_address = self._server_fd.accept()
+        # append to read_list and write_list
         self._rl.append(client_fd)
         self._wl.append(client_fd)
-
+        # print log
         logging.info('Client({}, {}) connected'.format(*client_address))
 
 
 class WebSocket_Simple_Server(WebSocket_Server_Base):
     
-    def __init__(self, host, port, *, handler = None):
+    def __init__(self, host, port):
         super(WebSocket_Simple_Server, self).__init__(host, port)
 
 
     def _frame_distribute(self, socket_fd, receive_frame):
-        self._client_list[socket_fd].distribute(receive_frame)
-
+        try:
+            self._client_list[socket_fd].distribute(receive_frame)
+        except exceptions.ConnectCLosed:
+            self._close_fd(socket_fd)
 
     def _send_frame(self, socket_fd, send_frame):
         if isinstance(send_frame, frame.Frame_Base):
@@ -252,7 +280,9 @@ class WebSocket_Simple_Server(WebSocket_Server_Base):
         socket_fd.send(send_frame)
 
 
-def create_websocket_server(host = 'localhost', port = 8999, debug = False, *, logging_level = logging.INFO):
+def create_websocket_server(host = 'localhost', port = 8999, *, debug = False, logging_level = logging.INFO):
+    if debug is True:
+        logging_level = logging.DEBUG
     logging.basicConfig(level = logging_level)
 
     return WebSocket_Simple_Server(host, port)

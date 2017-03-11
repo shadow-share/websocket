@@ -3,10 +3,12 @@
 # Copyright (C) 2017 ShadowMan
 #
 import math
+import array
 import base64
 import random
 import socket
 import struct
+
 
 def to_string(byte_string, encoding = 'utf-8'):
     if not isinstance(byte_string, str):
@@ -62,6 +64,7 @@ def flatten_list(array):
 
 # 0x1 = 0 0 0 0 0 0 0 1 => [ 1, 0, 0, 0, 0, 0, 0, 0 ]
 # 0x2 = 0 0 0 0 0 0 1 0 => [ 0, 1, 0, 0, 0, 0, 0, 0 ]
+# TODO  list -> array
 def number_to_bit_array(number, pad_byte = 1):
     if not isinstance(number, int):
         raise TypeError('the number must be int type')
@@ -71,28 +74,40 @@ def number_to_bit_array(number, pad_byte = 1):
     if bit_length is 0:
         bit_length = pad_byte * 8
     bit_array = [0] * (((bit_length // 8) + (0 if (bit_length % 8 == 0) else 1)) * 8)
+    if (len(bit_array) < pad_byte * 8):
+        bit_array = [ 0 ] * pad_byte * 8
 
     for _bit_index in range(bit_length):
         bit_array[_bit_index] = number & 0x1
         number = number >> 1
+
     return bit_array
 
 
 def string_to_bit_array(string):
     bit_array = []
     for char in to_bytes(string):
-        bit_array += number_to_bit_array(char)[::-1]
+        bit_array += number_to_bit_array(char)
     return bit_array
     # return number_to_bit_array(int(to_bytes(string).hex(), 16))[::-1]
 
 
-def bit_array_to_octet_array(bit_array):
+def octet_array_to_big_endian(octet_array):
+    if struct.pack('h', 0x0102)[0] is 0x01:
+        return octet_array
+    return octet_array[::-1]
+
+
+def bit_array_to_octet_array(bit_array, big_endian = False):
     if not isinstance(bit_array, list):
         raise KeyError('bit array must be list type')
     else:
         if len(bit_array) % 8 != 0:
             raise RuntimeError('bit array is invalid list')
-    return [ tuple(bit_array[oi * 8:(oi + 1) * 8]) for oi in range(len(bit_array) // 8) ]
+    if big_endian is True:
+        if struct.pack('h', 0x0102)[0] is 0x02:
+            return [ tuple(bit_array[oi * 8:(oi + 1) * 8])[::-1] for oi in range(len(bit_array) // 8) ][::-1]
+    return [ tuple(bit_array[oi * 8:(oi + 1) * 8])[::-1] for oi in range(len(bit_array) // 8) ]
 
 
 def string_to_octet_array(string):
@@ -156,4 +171,8 @@ def octet_array_to_string(octet_array):
     for octet in octet_array:
         string_rst += number_to_byte_string(octet_to_number(octet))
     return string_rst
+
+
+def empty_method():
+    pass
 

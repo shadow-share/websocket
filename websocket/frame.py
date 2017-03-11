@@ -122,14 +122,17 @@ Application data:  y bytes
       data".
 
 '''
+import os
 import abc
 import socket
 import struct
-from websocket import utils
+import logging
+from websocket import utils, exceptions, websocket_utils
 
 
 def ws_transform_payload_data(data, mask_key):
     if not isinstance(mask_key, (int)):
+        # from string transition to int
         if isinstance(mask_key, str):
             mask_key = int(mask_key, 16)
         else:
@@ -152,88 +155,97 @@ def ws_transform_payload_data(data, mask_key):
         transformed_string += struct.pack('!B', (value ^ mask_key_octet[index % 4]) & 0xff)
     return transformed_string
 
-PAYLOAD_LENGTH_16 = -1
-PAYLOAD_LENGTH_64 = -2
 
-# the most significant bit MUST be 0
 def parse_frame_length(frame_header):
     if not isinstance(frame_header, (str, bytes)):
         raise KeyError('frame_header must be str or bytes type')
     octet_array = utils.string_to_octet_array(frame_header)
     if len(octet_array) < 2:
-        raise KeyError('frame_header invalid')
+        logging.warning('receive less than 2-bytes, octets={}'.format(octet_array))
+        raise RuntimeError('frame header less than 2-bytes')
 
     # first bit is MASK flag
     payload_length = utils.octet_to_number(octet_array[1][1:])
     # if 0-125, that is the payload length
     if payload_length <= 125:
-        return payload_length
+        # if frame is client-to-server, payload length does not include mask-key(4-byte)
+        if octet_array[1][0] is 1:
+            return len(octet_array), payload_length + 6
+        return len(octet_array), payload_length + 2
     # If 126, the following 2 bytes interpreted as a
     # 16-bit unsigned integer are the payload length
     elif payload_length == 126:
+        # Payload length field is in [2-4)bytes
         if len(octet_array) < 4:
-            return PAYLOAD_LENGTH_16
-        else:
-            return utils.octet_to_number(utils.flatten_list(octet_array[2:4]))
+            raise exceptions.FrameHeaderParseError(
+                'payload length flag is 126, but header length is {}'.format(len(octet_array))
+            )
+        if octet_array[1][0] is 1:
+            return len(octet_array), utils.octet_to_number(utils.flatten_list(octet_array[2:4])) + 8
+        return len(octet_array), utils.octet_to_number(utils.flatten_list(octet_array[2:4])) + 4
     # If 127, the following 8 bytes interpreted as a
     # 64-bit unsigned integer (the most significant bit
     # MUST be 0) are the payload length.
     elif payload_length == 127:
+        # Payload length field is in [2-10)bytes
         if len(octet_array) < 10:
-            return PAYLOAD_LENGTH_64
-        else:
-            return utils.octet_to_number(utils.flatten_list(octet_array[2:10]))
-    else:
-        raise RuntimeError('fatal error, 0 <= 7-bits number <= 127')
+            raise exceptions.FrameHeaderParseError(
+                'payload length flag is 127, but header length is {}'.format(len(octet_array))
+            )
+        if octet_array[1][0] is 1:
+            return len(octet_array), utils.octet_to_number(utils.flatten_list(octet_array[2:4])) + 14
+        return len(octet_array), utils.octet_to_number(utils.flatten_list(octet_array[2:4])) + 10
+    raise exceptions.FatalError('internal error')
 
 def receive_single_frame(socket_fd):
     if not isinstance(socket_fd, socket.socket):
         raise KeyError('socket_fd must be socket.socket instance')
-    frame_contents = socket_fd.recv(2)
-    frame_length = parse_frame_length(frame_contents)
-
-    if frame_length is PAYLOAD_LENGTH_16:
-        frame_contents += socket_fd.recv(2)
-    elif frame_length is PAYLOAD_LENGTH_64:
-        frame_contents += socket_fd.recv(8)
-    frame_length = parse_frame_length(frame_contents)
-    if frame_length < 0:
-        raise RuntimeError('receive_single_frame method internal error')
-
-    # Client-To-Server have Mask-Key(4Bytes)
-    octet_array = utils.string_to_octet_array(frame_contents)
-    if (octet_array[1][0] == 1):
-        frame_length += 4
-
-    frame_contents += socket_fd.recv(frame_length)
+    # if frame is server send to client, and Payload_length = 127.
+    # then this frame header is 10-bytes. Or less
+    frame_contents = socket_fd.recv(10)
+    received_length = frame_length = len(frame_contents)
+    try:
+        received_length, frame_length = parse_frame_length(frame_contents)
+    except exceptions.FrameHeaderParseError as e:
+            raise
+    while len(frame_contents) < frame_length:
+        frame_contents += socket_fd.recv(frame_length - received_length)
+        received_length = len(frame_contents)
     return frame_contents
 
+
+# using for judge frame type
+Text_Frame = b'Text Frame'
+Binary_Frame = b'Binary Frame'
+
 class Frame_Base(object, metaclass = abc.ABCMeta):
+
+    _global_frame_type = {
+        0x0: b'Continuation Frame',
+        0x1: b'Text Frame',
+        0x2: b'Binary Frame',
+        0x3: b'Non-Control Frame',
+        0x4: b'Non-Control Frame',
+        0x5: b'Non-Control Frame',
+        0x6: b'Non-Control Frame',
+        0x7: b'Non-Control Frame',
+        0x8: b'Close Frame',
+        0x9: b'Ping Frame',
+        0xA: b'Pong Frame',
+        0xB: b'Control Frame',
+        0xC: b'Control Frame',
+        0xD: b'Control Frame',
+        0xE: b'Control Frame',
+        0xF: b'Control Frame',
+    }
 
     def __init__(self, raw_frame_bit_array):
         if len(raw_frame_bit_array) % 8 != 0:
             raise RuntimeError('the raw frame bit array is invalid')
         self._octet_array = utils.bit_array_to_octet_array(raw_frame_bit_array)
+        # parse frame
         self.parse_octet()
 
-        self._global_frame_type = {
-            0x0: b'Continuation Frame',
-            0x1: b'Text Frame',
-            0x2: b'Binary Frame',
-            0x3: b'Non-Control Frame',
-            0x4: b'Non-Control Frame',
-            0x5: b'Non-Control Frame',
-            0x6: b'Non-Control Frame',
-            0x7: b'Non-Control Frame',
-            0x8: b'Close Frame',
-            0x9: b'Ping Frame',
-            0xA: b'Pong Frame',
-            0xB: b'Control Frame',
-            0xC: b'Control Frame',
-            0xD: b'Control Frame',
-            0xE: b'Control Frame',
-            0xF: b'Control Frame',
-        }
 
     def parse_octet(self):
         # first byte(8-bits)
@@ -243,11 +255,11 @@ class Frame_Base(object, metaclass = abc.ABCMeta):
         # |N|V|V|V|       |
         # | |1|2|3|       |
         # +-+-+-+-+-------+
-        self._fin_flag = self._octet_array[0][0]
-        self._rsv1_flag = self._octet_array[0][1]
-        self._rsv2_flag = self._octet_array[0][2]
-        self._rsv3_flag = self._octet_array[0][3]
-        self._opcode_flag = utils.octet_to_number(self._octet_array[0][4:])
+        self._flag_fin = self._octet_array[0][0]
+        self._flag_rsv1 = self._octet_array[0][1]
+        self._flag_rsv2 = self._octet_array[0][2]
+        self._flag_rsv3 = self._octet_array[0][3]
+        self._flag_opcode = utils.octet_to_number(self._octet_array[0][4:])
         # second byte(8-bits)
         # +-+-------------+
         # |M| Payload len |
@@ -255,24 +267,25 @@ class Frame_Base(object, metaclass = abc.ABCMeta):
         # |S|             |
         # |K|             |
         # +-+-+-+-+-------+
-        self._mask_flag = self._octet_array[1][0]
-        self._payload_length = utils.octet_to_number(self._octet_array[1][1:])
+        self._flag_mask = self._octet_array[1][0]
+        self._flag_payload_length = utils.octet_to_number(self._octet_array[1][1:])
+        self._payload_length = self._flag_payload_length
 
         _last_byte_index = 2
         if self._payload_length is 126:
             # If 126, the following 2 bytes interpreted as a
             # 16-bit unsigned integer are the payload length
-            self._payload_length = utils.octet_to_number(utils.flatten_list(self._octet_array[2:4]))
+            self._payload_length = utils.octet_to_number(utils.flatten_list(self._octet_array[_last_byte_index:4]))
             _last_byte_index = 4
         elif self._payload_length is 127:
             # If 127, the following 8 bytes interpreted as a
             # 64-bit unsigned integer (the most significant bit
             # MUST be 0) are the payload length.
-            self._payload_length = utils.octet_to_number(utils.flatten_list(self._octet_array[2:10]))
+            self._payload_length = utils.octet_to_number(utils.flatten_list(self._octet_array[_last_byte_index:10]))
             _last_byte_index = 10
 
         # Masking-key, if MASK set to 1
-        if self._mask_flag is 1:
+        if self._flag_mask is 1:
             self._mask_key = utils.octet_to_number(
                 utils.flatten_list(self._octet_array[_last_byte_index:_last_byte_index + 4])
             )
@@ -282,36 +295,68 @@ class Frame_Base(object, metaclass = abc.ABCMeta):
 
         # Payload Data
         self._payload_data = utils.octet_array_to_string(self._octet_array[_last_byte_index:])
-        if self._mask_flag is 1:
+        if self._flag_mask is 1:
             self._payload_data = ws_transform_payload_data(self._payload_data, self._mask_key)
 
-    def pack(self):
-        pass
 
+    def pack(self):
+        header_octet_array = []
+        # first-byte
+        header_octet_array.append((
+            self._flag_fin, # FIN flag
+            self._flag_rsv1, # RSV1 flag
+            self._flag_rsv2, # RSV2 flag
+            self._flag_rsv3, # RSV3 flag
+            *utils.number_to_bit_array(self._flag_opcode)[::-1][4:] # Opcode
+        ))
+        # second-byte
+        header_octet_array.append((
+            self._flag_mask, # Mask flag
+            *utils.number_to_bit_array(self._flag_payload_length)[::-1][1:] # Payload length flag [ <125, 126, 127 ]
+        ))
+        # payload_length
+        if self._flag_payload_length is 126:
+            header_octet_array.extend(utils.bit_array_to_octet_array(
+                utils.number_to_bit_array(self._payload_length, 2), True),
+            )
+        elif self._flag_payload_length is 127:
+            header_octet_array.extend(utils.bit_array_to_octet_array(
+                utils.number_to_bit_array(self._payload_length, 8), True)
+            )
+        # Masking key
+        if self._flag_mask is 1:
+            _masking_key = struct.pack('!I', self._mask_key)
+        else:
+            _masking_key = b''
+        # Payload data
+        if self._flag_mask is 1:
+            _payload_data = ws_transform_payload_data(self._payload_data, self._mask_key)
+            return utils.octet_array_to_string(header_octet_array) + _masking_key + _payload_data
+        return utils.octet_array_to_string(header_octet_array) + _masking_key + self._payload_data
 
     @property
     def flag_fin(self):
-        return self._fin_flag
+        return self._flag_fin
 
     @property
     def flag_rsv1(self):
-        return self._rsv1_flag
+        return self._flag_rsv1
 
     @property
     def flag_rsv2(self):
-        return self._rsv2_flag
+        return self._flag_rsv2
 
     @property
     def flag_rsv3(self):
-        return self._rsv3_flag
+        return self._flag_rsv3
 
     @property
     def flag_opcode(self):
-        return self._opcode_flag
+        return self._flag_opcode
 
     @property
     def flag_mask(self):
-        return self._mask_flag
+        return self._flag_mask
     
     @property
     def payload_data_length(self):
@@ -324,9 +369,21 @@ class Frame_Base(object, metaclass = abc.ABCMeta):
     @property
     def payload_data(self):
         return self._payload_data
+
     @property
     def frame_type(self):
-        return self._global_frame_type[self._opcode_flag]
+        return self._global_frame_type[self._flag_opcode]
+
+    def __str__(self):
+        return '<WebSocket-Frame Fin={fin_flag} Type=\'{type}\' Payload_length={payload_length} Mask_key={mask_key}>'.format(
+            fin_flag = self.flag_fin,
+            type = utils.to_string(self._global_frame_type[self.flag_opcode]),
+            payload_length = self._payload_length,
+            mask_key = False if self._mask_key is False else hex(self._mask_key).upper()
+        )
+
+    def __repr__(self):
+        return self.__str__()
 
 
 class Frame_Parser(Frame_Base):
@@ -335,30 +392,29 @@ class Frame_Parser(Frame_Base):
         bit_array = utils.string_to_bit_array(receive_single_frame(socket_fd))
         super(Frame_Parser, self).__init__(bit_array)
 
-    def __str__(self):
-        return '<WebSocket-Frame FIN={} OPCODE={} PayLen={} Mask={}>'.format(
-            self.flag_fin, self.flag_opcode, self.payload_data_length, hex(self.mask_key).upper())
 
-    def __repr__(self):
-        return self.__str__()
-
-
-class Frame_Generator(object):
+class Frame_Generator(Frame_Base):
 
     def __init__(self):
+        super(Frame_Generator, self).__init__([ 0 ] * 16) # 2-bytes
+
+        # first-byte information
         self._flag_fin = 1
         self._flag_rsv1 = 0
         self._flag_rsv2 = 0
         self._flag_rsv3 = 0
 
         # default is text-frame
-        self._flag_opcode = 0x1
+        self._flag_opcode = 1
 
+        # mask information
         self._flag_mask = 0
         self._mask_key = False
 
+        # payload information
         self._payload_data = b''
-        self._payload_data_length = 0
+        self._payload_length = 0
+        self._flag_payload_length = 0
 
     def enable_fin(self):
         self._flag_fin = 1
@@ -401,31 +457,105 @@ class Frame_Generator(object):
         self._flag_opcode = opcode & 0xF
         return self
 
-    def pack(self):
-        return b''
-
-    def payload_data(self, contents):
-        self._payload_data = contents
-        self._payload_data_length = len(self._payload_data)
+    def set_payload_data(self, contents):
+        self._payload_data = utils.to_bytes(contents)
+        self._payload_length = len(self._payload_data)
+        if self._payload_length < 126:
+            self._flag_payload_length = self._payload_length
+        elif self._payload_length < 65536:
+            self._flag_payload_length = 126
+        else:
+            self._flag_payload_length = 127
         return self
 
+def _build_base_frame(from_client, extra_data):
+    # create a frame
+    rst_frame = Frame_Generator()
+    # judge is client-to-server
+    if from_client:
+        rst_frame.set_mask_key(websocket_utils.ws_generate_frame_mask_key())
+    # add extra data
+    if extra_data:
+        rst_frame.set_payload_data(extra_data)
+    return rst_frame
 
-def generate_ping_frame(from_client = False):
-    pass
+def generate_ping_frame(from_client = False, extra_data = None):
+    # ping-frame opcode = 0x9
+    return _build_base_frame(from_client, extra_data).opcode(0x9)
 
 
-def generate_pong_frame(from_client = False):
-    pass
+def generate_pong_frame(from_client = False, extra_data = None):
+    # pong-frame opcode = 0xA
+    return _build_base_frame(from_client, extra_data).opcode(0xA)
 
 
 def generate_text_frame(text, from_client = False):
-    pass
+    # text-frame opcode = 0x1
+    return _build_base_frame(from_client, text).opcode(0x1)
 
 
 def generate_binary_frame(contents, from_client = False):
-    pass
+    # text-frame opcode = 0x1
+    return _build_base_frame(from_client, contents).opcode(0x2)
 
 
-def generate_binary_frame_from_file(path_to_file, fro_client = False):
-    pass
+def generate_binary_frame_from_file(path_to_file, from_client = False):
+    # open file and read all contents
+    with open(path_to_file, 'rb') as fd:
+        buffer = fd.read(os.path.getsize(path_to_file))
+        return generate_binary_frame(buffer, from_client)
+
+
+class TextMessage(object):
+
+    def __init__(self, message, from_client = False):
+        if not isinstance(message, (str, bytes)):
+            raise TypeError('message must be str ot bytes type')
+        self._message = message
+        self._from_client = from_client
+
+
+    @property
+    def message(self):
+        return generate_text_frame(self._message, self._from_client)
+
+
+    @message.setter
+    def message(self, message):
+        if not isinstance(message, (str, bytes)):
+            raise TypeError('message must be str ot bytes type')
+        self._message = message
+
+
+class FileTextMessage(TextMessage):
+
+    def __init__(self, file_name, from_client = False):
+        try:
+            with open(file_name, 'r') as fd:
+                buffer = fd.read(os.path.getsize(file_name))
+                super(FileTextMessage, self).__init__(buffer, from_client)
+        except Exception:
+            raise
+
+
+class BinaryMessage(TextMessage):
+
+    def __init__(self, contents, from_client = False):
+        super(BinaryMessage, self).__init__(contents, from_client)
+
+
+    @property
+    def message(self):
+        return generate_binary_frame(self._message, self._from_client)
+
+
+class FileMessage(BinaryMessage):
+
+    def __init__(self, file_name, from_client = False):
+        try:
+            with open(file_name, 'rb') as fd:
+                buffer = fd.read(os.path.getsize(file_name))
+                super(FileMessage, self).__init__(buffer, from_client)
+        except Exception:
+            raise
 

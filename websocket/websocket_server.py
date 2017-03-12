@@ -154,7 +154,7 @@ import socket
 import logging
 from collections import deque, OrderedDict
 from websocket import utils, frame, http, websocket_utils,\
-    distributer, exceptions
+    distributer, exceptions, websocket_handler
 
 class WebSocket_Server_Base(object, metaclass = abc.ABCMeta):
 
@@ -172,11 +172,13 @@ class WebSocket_Server_Base(object, metaclass = abc.ABCMeta):
         self._on_error = None
 
 
-    def set_handler(self, on_connect, on_message, on_close, on_error):
-        self._on_connect = on_connect
-        self._on_message = on_message
-        self._on_close = on_close
-        self._on_error = on_error
+    def set_handler(self, ws_handlers):
+        if not isinstance(ws_handlers, websocket_handler.WebSocket_Handler):
+            raise TypeError('the websocket handlers must be base on WebSocket_Handler')
+        self._on_connect = ws_handlers.on_connect
+        self._on_message = ws_handlers.on_message
+        self._on_close = ws_handlers.on_close
+        self._on_error = ws_handlers.on_error
 
 
     def run_forever(self):
@@ -281,9 +283,7 @@ class WebSocket_Simple_Server(WebSocket_Server_Base):
 
 
 def create_websocket_server(host = 'localhost', port = 8999, *, debug = False, logging_level = logging.INFO):
-    if debug is True:
-        logging_level = logging.DEBUG
-    logging.basicConfig(level = logging_level)
+    utils.logger_init(logging_level)
 
     return WebSocket_Simple_Server(host, port)
 

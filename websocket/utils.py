@@ -8,6 +8,7 @@ import base64
 import random
 import socket
 import struct
+import logging
 
 
 def to_string(byte_string, encoding = 'utf-8'):
@@ -173,6 +174,7 @@ def octet_array_to_string(octet_array):
     return string_rst
 
 
-def empty_method():
-    pass
+def logger_init(level, console = False):
+    logging.basicConfig(level = level, format = '%(asctime)-7s %(levelname)s: %(message)s')
 
+    # logger = logging.getLogger()

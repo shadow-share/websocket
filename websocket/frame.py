@@ -197,6 +197,7 @@ def parse_frame_length(frame_header):
         return len(octet_array), utils.octet_to_number(utils.flatten_list(octet_array[2:4])) + 10
     raise exceptions.FatalError('internal error')
 
+
 def receive_single_frame(socket_fd):
     if not isinstance(socket_fd, socket.socket):
         raise KeyError('socket_fd must be socket.socket instance')
@@ -334,6 +335,7 @@ class Frame_Base(object, metaclass = abc.ABCMeta):
             return utils.octet_array_to_string(header_octet_array) + _masking_key + _payload_data
         return utils.octet_array_to_string(header_octet_array) + _masking_key + self._payload_data
 
+
     @property
     def flag_fin(self):
         return self._flag_fin
@@ -468,6 +470,7 @@ class Frame_Generator(Frame_Base):
             self._flag_payload_length = 127
         return self
 
+
 def _build_base_frame(from_client, extra_data):
     # create a frame
     rst_frame = Frame_Generator()
@@ -478,6 +481,7 @@ def _build_base_frame(from_client, extra_data):
     if extra_data:
         rst_frame.set_payload_data(extra_data)
     return rst_frame
+
 
 def generate_ping_frame(from_client = False, extra_data = None):
     # ping-frame opcode = 0x9

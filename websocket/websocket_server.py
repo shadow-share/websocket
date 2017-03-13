@@ -5,7 +5,7 @@
 
 # An HTTP/1.1 or higher GET request, including a "Request-URI"
 
-# A |Host| header field containing the server's authority.
+# A |Host| header fieldt containing the server's authoriy.
 
 # An |Upgrade| header field containing the value "websocket",
 # treated as an ASCII case-insensitive value.
@@ -170,6 +170,8 @@ class WebSocket_Server_Base(object, metaclass = abc.ABCMeta):
         self._on_message = None
         self._on_close = None
         self._on_error = None
+        # http request instance
+        self._http_request = None
 
 
     def set_handler(self, ws_handlers):
@@ -226,6 +228,24 @@ class WebSocket_Server_Base(object, metaclass = abc.ABCMeta):
                         self._on_close, # connect close handler
                         self._on_error # error occurs handler
                     )
+                    self._http_request = self._client_list[readable_fd].get_http_request()
+                    self._http_request_checker()
+
+
+    def _http_request_checker(self):
+        self._check_http_version()
+
+
+    def _check_http_version(self):
+        pass
+
+
+    def _check_origin(self):
+        pass
+
+
+    def _check_host(self):
+        pass
 
 
     def _frame_distribute(self, socket_fd, receive_frame):
@@ -260,8 +280,6 @@ class WebSocket_Server_Base(object, metaclass = abc.ABCMeta):
         # append to read_list and write_list
         self._rl.append(client_fd)
         self._wl.append(client_fd)
-        # print log
-        logging.info('Client({}, {}) connected'.format(*client_address))
 
 
 class WebSocket_Simple_Server(WebSocket_Server_Base):
@@ -276,10 +294,12 @@ class WebSocket_Simple_Server(WebSocket_Server_Base):
         except exceptions.ConnectCLosed:
             self._close_fd(socket_fd)
 
+
     def _send_frame(self, socket_fd, send_frame):
         if isinstance(send_frame, frame.Frame_Base):
             socket_fd.send(send_frame.pack())
         socket_fd.send(send_frame)
+
 
 
 def create_websocket_server(host = 'localhost', port = 8999, *, debug = False, logging_level = logging.INFO):

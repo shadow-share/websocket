@@ -8,24 +8,6 @@ import queue
 from websocket import http, websocket_utils, frame, exceptions
 
 
-class Sender(object):
-
-    def __init__(self):
-        pass
-
-
-    def send_text_message(self):
-        pass
-
-
-    def send_binary_message(self):
-        pass
-
-
-    def binary_message_from_file(self, file_name):
-        pass
-
-
 class Distributer(object):
 
     def __init__(self, socket_fd, send_function, on_handshake, on_message, on_close, on_error):
@@ -53,6 +35,8 @@ class Distributer(object):
         if not callable(send_function):
             raise TypeError('send method must be callable')
         self._send = send_function
+        # http request reference, using for header-fields check
+        self._http_request = None
         # Accept http-handshake
         self._accept_request()
 
@@ -70,6 +54,10 @@ class Distributer(object):
                 print(receive_frame)
 
 
+    def get_http_request(self):
+        return self._http_request
+
+
     def _accept_request(self):
         self._receive_buffer = b''
         while True:
@@ -79,6 +67,7 @@ class Distributer(object):
                 if b'\r\n\r\n' in self._receive_buffer:
                     break
         http_request = http.factory(self._receive_buffer)
+        self._http_request = http_request
         ws_key = http_request[b'Sec-WebSocket-Key']
 
         http_response = http.HttpResponse(101,

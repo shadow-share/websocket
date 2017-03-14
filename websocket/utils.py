@@ -9,6 +9,7 @@ import random
 import socket
 import struct
 import logging
+from websocket import http
 
 
 def to_string(byte_string, encoding = 'utf-8'):
@@ -178,3 +179,10 @@ def logger_init(level, console = False):
     logging.basicConfig(level = level, format = '%(asctime)-7s %(levelname)s: %(message)s')
 
     # logger = logging.getLogger()
+
+
+def http_header_compare(http_message, key, need_value):
+    if not isinstance(http_message, http.HttpMessage):
+        raise TypeError('http message type not allow')
+    value = http_message[key].value
+    return to_string(value) == to_string(need_value)

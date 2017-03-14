@@ -5,7 +5,8 @@
 import abc
 import socket
 import queue
-from websocket import http, websocket_utils, frame, exceptions
+import logging
+from websocket import http, websocket_utils, frame, exceptions, utils
 
 
 class Distributer(object):
@@ -43,10 +44,13 @@ class Distributer(object):
 
     def distribute(self, receive_frame):
         if receive_frame.frame_type in (frame.Text_Frame, frame.Binary_Frame):
-            response_frame = self._message_handler(receive_frame.payload_data)
-            if not isinstance(response_frame.message, frame.Frame_Base):
-                raise TypeError('message handler return type must be a Frame')
-            self._send(response_frame.message.pack())
+            try:
+                response_frame = self._message_handler(receive_frame.payload_data)
+                if response_frame and not isinstance(response_frame.message, frame.Frame_Base):
+                    raise TypeError('message handler return type must be a Frame')
+                self._send(response_frame.message.pack())
+            except Exception as e:
+                logging.error(e)
         else:
             if receive_frame.flag_opcode is 0x8:
                 self._on_receive_close_frame(receive_frame)
@@ -68,8 +72,9 @@ class Distributer(object):
                     break
         http_request = http.factory(self._receive_buffer)
         self._http_request = http_request
-        ws_key = http_request[b'Sec-WebSocket-Key']
+        self._http_request_checker()
 
+        ws_key = http_request[b'Sec-WebSocket-Key']
         http_response = http.HttpResponse(101,
             *http.create_header_fields(
                 (b'Upgrade', b'websocket'),
@@ -79,6 +84,59 @@ class Distributer(object):
 
         self._handshake_handler(self._socket_fd.getsockname())
         self._send(http_response.pack())
+
+
+    def _http_request_checker(self):
+        self._check_http_request_line()
+        self._check_host()
+        self._check_ws_header_fields()
+
+
+    def _check_http_request_line(self):
+        # An HTTP/1.1 or higher GET request, including a "Request-URI"
+        if not (self._http_request.http_version == http.HTTP_VERSION_1_1):
+            self._send(frame.generate_close_frame(False, extra_data = b''))
+            raise exceptions.RequestError('request method muse be HTTP/1.1')
+        if not (self._http_request.method == http.HTTP_METHOD_GET):
+            self._send(frame.generate_close_frame(False, extra_data = b''))
+            raise exceptions.RequestError('request method muse be HTTP/1.1')
+
+
+    def _check_host(self):
+        # A |Host| header field containing the server's authority.
+        if not self._http_request['Host']:
+            self._send(frame.generate_close_frame(False, extra_data = b''))
+            raise exceptions.RequestError('Host field not in http request header')
+            # TODO, custom defined host verify
+
+
+    def _check_ws_header_fields(self):
+        # An |Upgrade| header field containing the value "websocket",
+        # treated as an ASCII case-insensitive value.
+        if not utils.http_header_compare(self._http_request, 'Upgrade', 'websocket'):
+            self._send(frame.generate_close_frame(False, extra_data = b''))
+            raise exceptions.RequestError('http request miss Upgrade field')
+        # A |Connection| header field that includes the token "Upgrade",
+        # treated as an ASCII case-insensitive value.
+        if not utils.http_header_compare(self._http_request, 'Connection', 'Upgrade'):
+            self._send(frame.generate_close_frame(False, extra_data = b''))
+            raise exceptions.RequestError('http request miss Upgrade field')
+        # A |Sec-WebSocket-Key| header field with a base64-encoded (see
+        # Section 4 of [RFC4648]) value that, when decoded, is 16 bytes in
+        # length.
+        key = self._http_request['Sec-WebSocket-Key']
+        if key is None or not websocket_utils.ws_check_key_length(key.value):
+            self._send(frame.generate_close_frame(False, extra_data = b''))
+            raise exceptions.RequestError('Sec-WebSocket-Key field invalid or miss')
+        # A |Sec-WebSocket-Version| header field, with a value of 13.
+        # TODO. register a new websocket version
+        if not utils.http_header_compare(self._http_request, 'Sec-WebSocket-Version', '13'):
+            self._send(frame.generate_close_frame(False, extra_data = b''))
+            raise exceptions.RequestError('websocket version invalid')
+
+
+    def _check_origin(self):
+        pass
 
 
     def _ws_send_ping(self, extra_data = None):

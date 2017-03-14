@@ -510,6 +510,10 @@ def generate_binary_frame_from_file(path_to_file, from_client = False):
         return generate_binary_frame(buffer, from_client)
 
 
+def generate_close_frame(from_client = False, extra_data = None):
+    return _build_base_frame(from_client, '' if extra_data is None else extra_data).opcode(0x8)
+
+
 class TextMessage(object):
 
     def __init__(self, message, from_client = False):

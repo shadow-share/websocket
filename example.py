@@ -11,7 +11,7 @@ class Simple_Handler(websocket_handler.WebSocket_Handler):
         pass
 
     def on_message(self, message):
-        pass
+        return frame.FileTextMessage(message)
 
     def on_close(self, close_reason):
         pass

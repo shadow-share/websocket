@@ -9,9 +9,9 @@ from websocket import utils
 
 
 # Http version 1.1
-HTTP_VERSION_1_1 = 1.1
+HTTP_VERSION_1_1 = b'HTTP/1.1'
 # Http version 1.0
-HTTP_VERSION_1_0 = 1.0
+HTTP_VERSION_1_0 = b'HTTP/1.0'
 
 # Response status code description
 _response_status_description = {
@@ -54,6 +54,7 @@ class HttpField(namedtuple('HttpField', 'key value')):
 class HttpMessage(object, metaclass = abc.ABCMeta):
 
     def __init__(self, *header_fields):
+        self._http_version = HTTP_VERSION_1_1
         self._header_fields = OrderedDict()
 
         for k, v in filter(lambda el: isinstance(el, HttpField), header_fields):
@@ -68,13 +69,17 @@ class HttpMessage(object, metaclass = abc.ABCMeta):
         return RuntimeError('Derived class must be defined pack method')
 
     def __getitem__(self, item):
-        return self._header_fields.get(utils.to_bytes(item))
+        return self._header_fields.get(utils.to_bytes(item), None)
 
     def __setitem__(self, key, value):
         self._header_fields[utils.to_bytes(key)] = utils.to_bytes(value)
 
     def __repr__(self):
         return '<{} Hello World>'.format(self.__class__.__str__())
+
+    @property
+    def http_version(self):
+        return self._http_version
 
 
 class HttpRequest(HttpMessage):

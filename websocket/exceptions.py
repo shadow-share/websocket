@@ -15,3 +15,5 @@ class ConnectCLosed(Exception):
     pass
 
 
+class RequestError(Exception):
+    pass

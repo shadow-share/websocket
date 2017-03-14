@@ -3,22 +3,6 @@
 # Copyright (C) 2017 ShadowMan
 #
 
-# An HTTP/1.1 or higher GET request, including a "Request-URI"
-
-# A |Host| header fieldt containing the server's authoriy.
-
-# An |Upgrade| header field containing the value "websocket",
-# treated as an ASCII case-insensitive value.
-
-# A |Connection| header field that includes the token "Upgrade",
-# treated as an ASCII case-insensitive value.
-
-# A |Sec-WebSocket-Key| header field with a base64-encoded (see
-# Section 4 of [RFC4648]) value that, when decoded, is 16 bytes in
-# length.
-
-# A |Sec-WebSocket-Version| header field, with a value of 13.
-
 # Optionally, an |Origin| header field.  This header field is sent
 # by all browser clients.  A connection attempt lacking this
 # header field SHOULD NOT be interpreted as coming from a browser
@@ -148,6 +132,7 @@ Third fragment
 # If the data is being sent by the client, the frame(s) MUST be
 # masked as defined in Section 5.3.
 
+import os
 import abc
 import select
 import socket
@@ -156,7 +141,29 @@ from collections import deque, OrderedDict
 from websocket import utils, frame, http, websocket_utils,\
     distributer, exceptions, websocket_handler
 
-class WebSocket_Server_Base(object, metaclass = abc.ABCMeta):
+
+class Deamon(object):
+
+    def run_forever(self):
+        if os.name == 'nt' or not hasattr(os, 'fork'):
+            pass
+        # double fork create a deamon
+        pid = os.fork() # fork #1
+        if pid > 0:
+            exit()
+
+        os.chdir('/')
+        os.setsid()
+        os.umask(0)
+
+        pid = os.fork() # fork #2
+        if pid > 0:
+            exit()
+
+        # is deamon process
+
+
+class WebSocket_Server_Base(Deamon, metaclass = abc.ABCMeta):
 
     def __init__(self, host, port):
         # all handshake client
@@ -170,8 +177,6 @@ class WebSocket_Server_Base(object, metaclass = abc.ABCMeta):
         self._on_message = None
         self._on_close = None
         self._on_error = None
-        # http request instance
-        self._http_request = None
 
 
     def set_handler(self, ws_handlers):
@@ -184,6 +189,7 @@ class WebSocket_Server_Base(object, metaclass = abc.ABCMeta):
 
 
     def run_forever(self):
+        super(WebSocket_Server_Base, self).run_forever()
         # Create server socket file descriptor
         self._server_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         # Set socket option, REUSEADDR = True
@@ -228,24 +234,6 @@ class WebSocket_Server_Base(object, metaclass = abc.ABCMeta):
                         self._on_close, # connect close handler
                         self._on_error # error occurs handler
                     )
-                    self._http_request = self._client_list[readable_fd].get_http_request()
-                    self._http_request_checker()
-
-
-    def _http_request_checker(self):
-        self._check_http_version()
-
-
-    def _check_http_version(self):
-        pass
-
-
-    def _check_origin(self):
-        pass
-
-
-    def _check_host(self):
-        pass
 
 
     def _frame_distribute(self, socket_fd, receive_frame):

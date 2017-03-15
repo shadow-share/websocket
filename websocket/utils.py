@@ -182,7 +182,10 @@ def logger_init(level, console = False):
 
 
 def http_header_compare(http_message, key, need_value):
+    print(http_message, http_message['Upgrade'])
     if not isinstance(http_message, http.HttpMessage):
         raise TypeError('http message type not allow')
-    value = http_message[key].value
+    value = http_message[key]
+    if value is None:
+        raise KeyError('in http message \'{key}\' not found'.format(key = key))
     return to_string(value) == to_string(need_value)

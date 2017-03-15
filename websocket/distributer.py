@@ -82,14 +82,14 @@ class Distributer(object):
                 (b'Sec-WebSocket-Accept', websocket_utils.ws_accept_key(ws_key.value))
             ))
 
-        self._handshake_handler(self._socket_fd.getsockname())
+        self._handshake_handler(self._socket_fd.getpeername())
         self._send(http_response.pack())
 
 
     def _http_request_checker(self):
         self._check_http_request_line()
         self._check_host()
-        self._check_ws_header_fields()
+        # self._check_ws_header_fields()
 
 
     def _check_http_request_line(self):

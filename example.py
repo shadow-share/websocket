@@ -2,13 +2,14 @@
 #
 # Copyright (C) 2017 ShadowMan
 #
+import logging
 from websocket import websocket_server, frame, websocket_handler
 
 
 class Simple_Handler(websocket_handler.WebSocket_Handler):
 
     def on_connect(self, socket_name):
-        pass
+        logging.info('Client {}:{} Connected'.format(*socket_name))
 
     def on_message(self, message):
         return frame.FileTextMessage(message)

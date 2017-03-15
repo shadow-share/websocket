@@ -13,6 +13,7 @@ HTTP_VERSION_1_1 = b'HTTP/1.1'
 # Http version 1.0
 HTTP_VERSION_1_0 = b'HTTP/1.0'
 
+
 # Response status code description
 _response_status_description = {
     101: b'Switching Protocols',
@@ -22,6 +23,7 @@ _response_status_description = {
     404: b'Not Found', 426: b'Upgrade Required',
     500: b'Internal Server Error'
 }
+
 
 # Http methods
 HTTP_METHODS = [b'GET', b'POST', b'PUT', b'DELETE', b'UPDATE', b'HEAD']
@@ -37,6 +39,7 @@ HTTP_METHOD_DELETE = b'DELETE'
 HTTP_METHOD_UPDATE = b'UPDATE'
 # HEAD
 HTTP_METHOD_HEAD = b'HEAD'
+
 
 class HttpField(namedtuple('HttpField', 'key value')):
 
@@ -58,7 +61,9 @@ class HttpMessage(object, metaclass = abc.ABCMeta):
         self._header_fields = OrderedDict()
 
         for k, v in filter(lambda el: isinstance(el, HttpField), header_fields):
-            self._header_fields[utils.to_bytes(k)] = HttpField(utils.to_bytes(k), utils.to_bytes(v))
+            # HTTP headers are not case-sensitive
+            k = utils.to_bytes(k).lower()
+            self._header_fields[k] = HttpField(k, utils.to_bytes(v))
 
     @abc.abstractclassmethod
     def __str__(self):
@@ -69,10 +74,10 @@ class HttpMessage(object, metaclass = abc.ABCMeta):
         return RuntimeError('Derived class must be defined pack method')
 
     def __getitem__(self, item):
-        return self._header_fields.get(utils.to_bytes(item), None)
+        return self._header_fields.get(utils.to_bytes(item).lower(), None)
 
     def __setitem__(self, key, value):
-        self._header_fields[utils.to_bytes(key)] = utils.to_bytes(value)
+        self._header_fields[utils.to_bytes(key).lower()] = utils.to_bytes(value)
 
     def __repr__(self):
         return '<{} Hello World>'.format(self.__class__.__str__())

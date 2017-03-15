@@ -146,7 +146,8 @@ class Deamon(object):
 
     def run_forever(self):
         if os.name == 'nt' or not hasattr(os, 'fork'):
-            pass
+            logging.warning('Windows does not support fork.')
+            return
         # double fork create a deamon
         pid = os.fork() # fork #1
         if pid > 0:

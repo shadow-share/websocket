@@ -17,3 +17,7 @@ class ConnectCLosed(Exception):
 
 class RequestError(Exception):
     pass
+
+
+class LoggerWarning(RuntimeWarning):
+    pass

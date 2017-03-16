@@ -137,6 +137,7 @@ import abc
 import select
 import socket
 import logging
+from contextlib import contextmanager
 from collections import deque, OrderedDict
 from websocket import utils, frame, http, websocket_utils,\
     distributer, exceptions, websocket_handler
@@ -144,7 +145,7 @@ from websocket import utils, frame, http, websocket_utils,\
 
 class Deamon(object):
 
-    def run_forever(self):
+    def run_forever(self, *, pid_file = None):
         if os.name == 'nt' or not hasattr(os, 'fork'):
             logging.warning('Windows does not support fork.')
             return
@@ -160,7 +161,6 @@ class Deamon(object):
         pid = os.fork() # fork #2
         if pid > 0:
             exit()
-
         # is deamon process
 
 
@@ -189,8 +189,8 @@ class WebSocket_Server_Base(Deamon, metaclass = abc.ABCMeta):
         self._on_error = ws_handlers.on_error
 
 
-    def run_forever(self):
-        super(WebSocket_Server_Base, self).run_forever()
+    def run_forever(self, *, pid_file = None):
+        super(WebSocket_Server_Base, self).run_forever(pid_file = pid_file)
         # Create server socket file descriptor
         self._server_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         # Set socket option, REUSEADDR = True
@@ -200,6 +200,9 @@ class WebSocket_Server_Base(Deamon, metaclass = abc.ABCMeta):
         # Start server
         self._server_fd.bind(self._server_address)
         self._server_fd.listen(16)
+        # logging
+        utils.warning_msg('* Debugger is active!')
+        utils.info_msg('Server run {}:{}'.format(*self._server_address))
         # enter the main loop
         self._select_loop()
 
@@ -290,12 +293,19 @@ class WebSocket_Simple_Server(WebSocket_Server_Base):
         socket_fd.send(send_frame)
 
 
+    def __enter__(self):
+        return self
 
-def create_websocket_server(host = 'localhost', port = 8999, *, debug = False, logging_level = logging.INFO):
-    utils.logger_init(logging_level)
 
-    return WebSocket_Simple_Server(host, port)
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        pass
 
+
+def create_websocket_server(host = '0.0.0.0', port = 8999, *, debug = False, logging_level = logging.INFO, log_file = None):
+    with WebSocket_Simple_Server(host, port) as server:
+        utils.logger_init(logging_level, console = debug, log_file = log_file)
+
+        return server
 
 def create_websocket_event_server():
     pass

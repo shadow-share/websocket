@@ -20,7 +20,7 @@ class Simple_Handler(websocket_handler.WebSocket_Handler):
     def on_error(self, socket_name):
         pass
 
-ws_server = websocket_server.create_websocket_server(host = 'localhost', port = 8999)
+ws_server = websocket_server.create_websocket_server(host = 'localhost', port = 8999, debug=True)
 
 ws_server.set_handler(Simple_Handler())
 ws_server.run_forever()

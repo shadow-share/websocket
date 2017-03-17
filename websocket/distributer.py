@@ -48,7 +48,7 @@ class Distributer(object):
                 response_frame = self._message_handler(receive_frame.payload_data)
                 if response_frame and not isinstance(response_frame.message, frame.Frame_Base):
                     raise TypeError('message handler return type must be a Frame')
-                self._send(response_frame.message.pack())
+                self._send(response_frame.message)
             except Exception as e:
                 logging.error(e)
         else:
@@ -83,7 +83,7 @@ class Distributer(object):
             ))
 
         self._handshake_handler(self._socket_fd.getpeername())
-        self._send(http_response.pack())
+        self._send(http_response)
 
 
     def _http_request_checker(self):

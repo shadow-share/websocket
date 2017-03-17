@@ -21,3 +21,12 @@ class RequestError(Exception):
 
 class LoggerWarning(RuntimeWarning):
     pass
+
+
+class DeamonError(Exception):
+    pass
+
+
+class SendFrameError(Exception):
+    pass
+

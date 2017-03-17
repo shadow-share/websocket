@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+# !/usr/bin/env python3
 #
 # Copyright (C) 2017 ShadowMan
 #
@@ -134,39 +134,91 @@ Third fragment
 
 import os
 import abc
+import sys
+import atexit
 import select
 import socket
 import logging
 from contextlib import contextmanager
 from collections import deque, OrderedDict
-from websocket import utils, frame, http, websocket_utils,\
+from websocket import utils, frame, http, websocket_utils, \
     distributer, exceptions, websocket_handler
 
 
 class Deamon(object):
 
-    def run_forever(self, *, pid_file = None):
+    def __init__(self, *, debug=False,
+                 stdin: str = '/dev/null',
+                 stdout: str = '/dev/null',
+                 stderr: str = '/dev/null',
+                 pid_file: str = '/tmp/python_websocket.pid'):
+        self._debug = debug
+        self._stdin = stdin  # type: str
+        self._stdout = stdout  # type: str
+        self._stderr = stderr  # type: str
+        self._pid_file = pid_file  # type: str
+
+    def run_forever(self):
+        if not self._debug and os.path.exists(self._pid_file):
+            raise exceptions.DeamonError(
+                'pid file already exists, Deamon running?')
+        elif self._debug:
+            # logging
+            utils.warning_msg('Debugger is active!')
+
+    def _remove_pid_file(self):
+        if os.path.exists(self._pid_file):
+            os.remove(self._pid_file)
+
+    def _start_deamon(self):
         if os.name == 'nt' or not hasattr(os, 'fork'):
-            logging.warning('Windows does not support fork.')
-            return
+            raise exceptions.DeamonError('Windows does not support fork.')
         # double fork create a deamon
-        pid = os.fork() # fork #1
-        if pid > 0:
-            exit()
+        try:
+            pid = os.fork()  # fork #1
+            if pid > 0:
+                exit()
+        except OSError as e:
+            raise exceptions.FatalError('Fork #1 error occurs, {}:{}'.format(
+                e.errno, e.error))
 
         os.chdir('/')
         os.setsid()
         os.umask(0)
 
-        pid = os.fork() # fork #2
-        if pid > 0:
-            exit()
-        # is deamon process
+        try:
+
+            pid = os.fork()  # fork #2
+            if pid > 0:
+                exit()
+        except OSError as e:
+            raise exceptions.FatalError('Fork #1 error occurs, {}:{}'.format(
+                e.errno, e.error))
+
+        sys.stdout.flush()
+        sys.stderr.flush()
+        _stdin = open(self._stdin, 'r')
+        _stdout = open(self._stdout, 'a')
+        _stderr = open(self._stderr, 'a', buffering=0)
+        os.dup2(_stdin.fileno(), sys.stdin.fileno())
+        os.dup2(_stdout.fileno(), sys.stdout.fileno())
+        os.dup2(_stderr.fileno(), sys.stderr.fileno())
+
+        atexit.register(self._remove_pid_file)
+        with open(self._pid_file, 'w') as fd:
+            fd.write('{pid}\n'.format(pid=os.getpid()))
+        utils.info_msg('Deamon Start ... Complete')
 
 
-class WebSocket_Server_Base(Deamon, metaclass = abc.ABCMeta):
+class WebSocket_Server_Base(Deamon, metaclass=abc.ABCMeta):
 
-    def __init__(self, host, port):
+    def __init__(self, host, port, *, pid_file=None, debug=False):
+        # start deamon
+        if pid_file is not None:
+            super(WebSocket_Server_Base, self).__init__(pid_file=pid_file,
+                                                        debug=debug)
+        else:
+            super(WebSocket_Server_Base, self).__init__(debug=debug)
         # all handshake client
         self._client_list = {}
         # Server address information
@@ -179,18 +231,17 @@ class WebSocket_Server_Base(Deamon, metaclass = abc.ABCMeta):
         self._on_close = None
         self._on_error = None
 
-
     def set_handler(self, ws_handlers):
         if not isinstance(ws_handlers, websocket_handler.WebSocket_Handler):
-            raise TypeError('the websocket handlers must be base on WebSocket_Handler')
+            raise TypeError(
+                'the websocket handlers must be base on WebSocket_Handler')
         self._on_connect = ws_handlers.on_connect
         self._on_message = ws_handlers.on_message
         self._on_close = ws_handlers.on_close
         self._on_error = ws_handlers.on_error
 
-
-    def run_forever(self, *, pid_file = None):
-        super(WebSocket_Server_Base, self).run_forever(pid_file = pid_file)
+    def run_forever(self):
+        super(WebSocket_Server_Base, self).run_forever()
         # Create server socket file descriptor
         self._server_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         # Set socket option, REUSEADDR = True
@@ -200,16 +251,14 @@ class WebSocket_Server_Base(Deamon, metaclass = abc.ABCMeta):
         # Start server
         self._server_fd.bind(self._server_address)
         self._server_fd.listen(16)
-        # logging
-        utils.warning_msg('* Debugger is active!')
         utils.info_msg('Server run {}:{}'.format(*self._server_address))
         # enter the main loop
         self._select_loop()
 
-
     def _select_loop(self):
         # in the begin, read-list have only server socket
-        self._rl, self._wl, self._xl = deque([ self._server_fd ]), deque(), deque()
+        self._rl, self._wl, self._xl = deque(
+            [self._server_fd]), deque(), deque()
 
         while True:
             rl, wl, el = select.select(self._rl, self._wl, self._xl)
@@ -218,53 +267,53 @@ class WebSocket_Server_Base(Deamon, metaclass = abc.ABCMeta):
             self._write_list_handler(wl)
             self._error_list_handler(el)
 
-
     def _read_list_handler(self, rl):
         for readable_fd in rl:
             if readable_fd == self._server_fd:
                 self._accept_client()
             else:
                 if readable_fd in self._client_list:
-                    self._frame_distribute(readable_fd, frame.Frame_Parser(readable_fd))
+                    self._frame_distribute(readable_fd,
+                                           frame.Frame_Parser(readable_fd))
                 else:
                     # write queue for single socket descriptor
                     self._write_queue[readable_fd] = deque()
                     # Received data is an HTTP request
                     self._client_list[readable_fd] = distributer.Distributer(
-                        readable_fd, # socket file descriptor
-                        self._write_queue[readable_fd].append, # send method
-                        self._on_connect, # connect established handler
-                        self._on_message, # message received handler
-                        self._on_close, # connect close handler
-                        self._on_error # error occurs handler
+                        readable_fd,  # socket file descriptor
+                        self._write_queue[readable_fd].append,  # send method
+                        self._on_connect,  # connect established handler
+                        self._on_message,  # message received handler
+                        self._on_close,  # connect close handler
+                        self._on_error  # error occurs handler
                     )
 
-
     def _frame_distribute(self, socket_fd, receive_frame):
-        pass
-
+        try:
+            self._client_list[socket_fd].distribute(receive_frame)
+        except exceptions.ConnectCLosed:
+            self._close_fd(socket_fd)
 
     @abc.abstractclassmethod
     def _send_frame(self, socket_fd, send_frame):
         pass
 
-
     def _write_list_handler(self, wl):
         for writeable_fd in self._write_queue:
             if writeable_fd in wl:
                 while len(self._write_queue[writeable_fd]):
-                    self._send_frame(writeable_fd, self._write_queue[writeable_fd].popleft())
-
+                    self._send_frame(
+                        writeable_fd,
+                        self._write_queue[writeable_fd].popleft()
+                    )
 
     def _error_list_handler(self, el):
         pass
-
 
     def _close_fd(self, socket_fd):
         self._rl.remove(socket_fd)
         self._wl.remove(socket_fd)
         socket_fd.close()
-
 
     def _accept_client(self):
         # accept new client
@@ -275,22 +324,24 @@ class WebSocket_Server_Base(Deamon, metaclass = abc.ABCMeta):
 
 
 class WebSocket_Simple_Server(WebSocket_Server_Base):
-    
-    def __init__(self, host, port):
-        super(WebSocket_Simple_Server, self).__init__(host, port)
+
+    def __init__(self, host, port, *, debug=False):
+        self._debug_mode = bool(debug)
+        super(WebSocket_Simple_Server, self).__init__(host, port, debug = debug)
 
 
     def _frame_distribute(self, socket_fd, receive_frame):
-        try:
-            self._client_list[socket_fd].distribute(receive_frame)
-        except exceptions.ConnectCLosed:
-            self._close_fd(socket_fd)
+        super(WebSocket_Simple_Server, self)._frame_distribute(socket_fd, receive_frame)
 
 
     def _send_frame(self, socket_fd, send_frame):
         if isinstance(send_frame, frame.Frame_Base):
-            socket_fd.send(send_frame.pack())
-        socket_fd.send(send_frame)
+            socket_fd.sendall(send_frame.pack())
+        elif hasattr(send_frame, 'pack'):
+            socket_fd.sendall(send_frame.pack())
+        else:
+            print(send_frame)
+            raise exceptions.SendFrameError('send frame is not base Frame')
 
 
     def __enter__(self):
@@ -298,14 +349,18 @@ class WebSocket_Simple_Server(WebSocket_Server_Base):
 
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        pass
+        if exc_type and exc_tb:
+            raise exc_val
 
 
-def create_websocket_server(host = '0.0.0.0', port = 8999, *, debug = False, logging_level = logging.INFO, log_file = None):
-    with WebSocket_Simple_Server(host, port) as server:
-        utils.logger_init(logging_level, console = debug, log_file = log_file)
-
+def create_websocket_server(host = '0.0.0.0', port = 8999, *,
+                            debug = False,
+                            logging_level = logging.INFO,
+                            log_file = None):
+    with WebSocket_Simple_Server(host, port, debug=debug) as server:
+        utils.logger_init(logging_level, console=debug, log_file=log_file)
         return server
+
 
 def create_websocket_event_server():
     pass

@@ -3,7 +3,6 @@
 # Copyright (C) 2017 ShadowMan
 #
 import math
-import array
 import base64
 import random
 import socket
@@ -66,7 +65,6 @@ def flatten_list(array):
 
 # 0x1 = 0 0 0 0 0 0 0 1 => [ 1, 0, 0, 0, 0, 0, 0, 0 ]
 # 0x2 = 0 0 0 0 0 0 1 0 => [ 0, 1, 0, 0, 0, 0, 0, 0 ]
-# TODO  list -> array
 def number_to_bit_array(number, pad_byte = 1):
     if not isinstance(number, int):
         raise TypeError('the number must be int type')
@@ -200,10 +198,11 @@ def logger_init(level, console = False, log_file = None):
     if len(logger.handlers):
         logger.removeHandler(logger.handlers[0])
 
-    if not (log_file is False):
+    if not (log_file is False) and console is False:
         if log_file is None:
             # Only run under *nix
             log_file = '/tmp/python_websocket_server.log'
+        print(log_file)
         handler = logging.FileHandler(log_file)
         handler.setLevel(level)
 
@@ -218,6 +217,7 @@ def logger_init(level, console = False, log_file = None):
         formatter = logging.Formatter('%(asctime)-12s: %(levelname)-8s %(message)s', '%Y/%m/%d %H:%M:%S')
         console.setFormatter(formatter)
         logging.getLogger('').addHandler(console)
+        warning_msg('logger file handler is disable')
 
     if log_file is False and console is False:
         raise exceptions.LoggerWarning('logger is turn off!')

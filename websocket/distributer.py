@@ -11,15 +11,15 @@ from websocket import http, websocket_utils, frame, exceptions, utils
 
 class Distributer(object):
 
-    def __init__(self, socket_fd, send_function, on_handshake, on_message, on_close, on_error):
+    def __init__(self, socket_fd, send_function, on_connect, on_message, on_close, on_error):
         # Client socket file descriptor
         if not isinstance(socket_fd, socket.socket):
             raise TypeError('socket file descriptor must be socket.socket type')
         self._socket_fd = socket_fd
         # On handshake execute
-        if not callable(on_handshake):
+        if not callable(on_connect):
             raise TypeError('handshake handler must be callable')
-        self._handshake_handler = on_handshake
+        self._connect_handler = on_connect
         # On receive message execute
         if not callable(on_message):
             raise TypeError('message handler must be callable')
@@ -50,7 +50,9 @@ class Distributer(object):
                     raise TypeError('message handler return type must be a Frame')
                 self._send(response_frame.message)
             except Exception as e:
-                logging.error(e)
+                logging.error('On Client({}:{}) Error Occurs({})'.format(
+                    *self._socket_fd.getpeername(), str(e)))
+                raise exceptions.ConnectCLosed(e)
         else:
             if receive_frame.flag_opcode is 0x8:
                 self._on_receive_close_frame(receive_frame)
@@ -81,19 +83,23 @@ class Distributer(object):
                 (b'Connection', b'Upgrade'),
                 (b'Sec-WebSocket-Accept', websocket_utils.ws_accept_key(ws_key.value))
             ))
-
-        self._handshake_handler(self._socket_fd.getpeername())
+        self._connect_handler(self._socket_fd.getpeername())
         self._send(http_response)
 
 
     def _http_request_checker(self):
+        # An HTTP/1.1 or higher GET request, including a "Request-URI"
         self._check_http_request_line()
+        # A |Host| header field containing the server's authority.
         self._check_host()
-        # self._check_ws_header_fields()
+        # Other proprietary Websocket headers
+        self._check_ws_header_fields()
+        # Optionally, a |Sec-WebSocket-Protocol| header field, with a list
+        # of values indicating which protocols the client would like to
+        # speak, ordered by preference.
 
 
     def _check_http_request_line(self):
-        # An HTTP/1.1 or higher GET request, including a "Request-URI"
         if not (self._http_request.http_version == http.HTTP_VERSION_1_1):
             self._send(frame.generate_close_frame(False, extra_data = b''))
             raise exceptions.RequestError('request method muse be HTTP/1.1')
@@ -103,7 +109,6 @@ class Distributer(object):
 
 
     def _check_host(self):
-        # A |Host| header field containing the server's authority.
         if not self._http_request['Host']:
             self._send(frame.generate_close_frame(False, extra_data = b''))
             raise exceptions.RequestError('Host field not in http request header')
@@ -133,6 +138,10 @@ class Distributer(object):
         if not utils.http_header_compare(self._http_request, 'Sec-WebSocket-Version', '13'):
             self._send(frame.generate_close_frame(False, extra_data = b''))
             raise exceptions.RequestError('websocket version invalid')
+        # Optionally, an |Origin| header field.  This header field is sent
+        # by all browser clients.  A connection attempt lacking this
+        # header field SHOULD NOT be interpreted as coming from a browser
+        # client.
 
 
     def _check_origin(self):

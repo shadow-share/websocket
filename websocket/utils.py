@@ -186,7 +186,12 @@ def _logger_level(level):
     elif level == 'CRITICAL':
         return logging.CRITICAL
     else:
-        raise TypeError("Invalid logginf level '{level}'".format(level = level))
+        raise TypeError("Invalid logging level '{level}'".format(level = level))
+
+
+_wait_message_queue = [] # type: list
+def _wait_logger_init_msg(func, message:str):
+    _wait_message_queue.append((func, message))
 
 
 def logger_init(level, console = False, log_file = None):
@@ -202,7 +207,6 @@ def logger_init(level, console = False, log_file = None):
         if log_file is None:
             # Only run under *nix
             log_file = '/tmp/python_websocket_server.log'
-        print(log_file)
         handler = logging.FileHandler(log_file)
         handler.setLevel(level)
 
@@ -217,17 +221,20 @@ def logger_init(level, console = False, log_file = None):
         formatter = logging.Formatter('%(asctime)-12s: %(levelname)-8s %(message)s', '%Y/%m/%d %H:%M:%S')
         console.setFormatter(formatter)
         logging.getLogger('').addHandler(console)
-        warning_msg('logger file handler is disable')
+        _wait_logger_init_msg(warning_msg, 'logger file handler is disable')
 
     if log_file is False and console is False:
         raise exceptions.LoggerWarning('logger is turn off!')
 
+    for func, message in _wait_message_queue:
+        if callable(func):
+            func(message)
+
 
 def http_header_compare(http_message, key, need_value):
-    print(http_message, http_message['Upgrade'])
     if not isinstance(http_message, http.HttpMessage):
         raise TypeError('http message type not allow')
-    value = http_message[key]
+    value = http_message[key].value
     if value is None:
         raise KeyError('in http message \'{key}\' not found'.format(key = key))
     return to_string(value) == to_string(need_value)

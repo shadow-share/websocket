@@ -218,6 +218,7 @@ def receive_single_frame(socket_fd):
 # using for judge frame type
 Text_Frame = b'Text Frame'
 Binary_Frame = b'Binary Frame'
+Close_Frame = b'Close Frame'
 
 class Frame_Base(object, metaclass = abc.ABCMeta):
 
@@ -510,8 +511,10 @@ def generate_binary_frame_from_file(path_to_file, from_client = False):
         return generate_binary_frame(buffer, from_client)
 
 
-def generate_close_frame(from_client = False, extra_data = None):
-    return _build_base_frame(from_client, '' if extra_data is None else extra_data).opcode(0x8)
+def generate_close_frame(from_client = False, extra_data = None, errno = 1000):
+    errno = struct.pack('!h', errno)
+    reason = utils.to_bytes('' if extra_data is None else extra_data)
+    return _build_base_frame(from_client, errno + reason).opcode(0x8)
 
 
 class TextMessage(object):

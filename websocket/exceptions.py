@@ -11,7 +11,7 @@ class FrameHeaderParseError(Exception):
     pass
 
 
-class ConnectCLosed(Exception):
+class ConnectClosed(Exception):
     pass
 
 

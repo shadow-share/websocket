@@ -3,8 +3,6 @@
 # Copyright (C) 2017 ShadowMan
 #
 
-
-
 # Optionally, a |Sec-WebSocket-Extensions| header field, with a
 # list of values indicating which extensions the client would like
 # to speak.
@@ -130,9 +128,9 @@ import abc
 import sys
 import atexit
 import select
+import signal
 import socket
 import logging
-from contextlib import contextmanager
 from collections import deque, OrderedDict
 from websocket import utils, frame, http, websocket_utils, \
     distributer, exceptions, websocket_handler
@@ -141,15 +139,16 @@ from websocket import utils, frame, http, websocket_utils, \
 class Deamon(object):
 
     def __init__(self, *, debug = False,
-                 stdin: str = '/dev/null',
-                 stdout: str = '/dev/null',
-                 stderr: str = '/dev/null',
-                 pid_file: str = '/tmp/python_websocket.pid'):
+                 stdin:str = '/dev/null',
+                 stdout:str = '/dev/null',
+                 stderr:str = '/dev/null',
+                 pid_file:str = '/tmp/python_websocket.pid'):
         self._debug = debug
         self._stdin = stdin  # type: str
         self._stdout = stdout  # type: str
         self._stderr = stderr  # type: str
         self._pid_file = pid_file  # type: str
+
 
     def run_forever(self):
         if not self._debug and os.path.exists(self._pid_file):
@@ -161,9 +160,6 @@ class Deamon(object):
         else:
             self._start_deamon()
 
-    def _remove_pid_file(self):
-        if os.path.exists(self._pid_file):
-            os.remove(self._pid_file)
 
     def _start_deamon(self):
         if os.name == 'nt' or not hasattr(os, 'fork'):
@@ -182,7 +178,6 @@ class Deamon(object):
         os.umask(0)
 
         try:
-
             pid = os.fork()  # fork #2
             if pid > 0:
                 exit()
@@ -190,6 +185,7 @@ class Deamon(object):
             raise exceptions.FatalError('Fork #1 error occurs, {}:{}'.format(
                 e.errno, e.error))
 
+        # redirect all std file descriptor
         sys.stdout.flush()
         sys.stderr.flush()
         _stdin = open(self._stdin, 'r')
@@ -199,10 +195,26 @@ class Deamon(object):
         os.dup2(_stdout.fileno(), sys.stdout.fileno())
         os.dup2(_stderr.fileno(), sys.stderr.fileno())
 
+        # set signal handler
+        signal.signal(signal.SIGTERM, self._signal_handler)
+        signal.signal(signal.SIGILL, self._signal_handler)
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
+        # register function at exit
         atexit.register(self._remove_pid_file)
-        with open(self._pid_file, 'w') as fd:
-            fd.write('{pid}\n'.format(pid=os.getpid()))
-        utils.info_msg('Deamon Start ... Complete')
+        with open(self._pid_file, 'a+') as fd:
+            fd.write('{pid}\n'.format(pid = os.getpid()))
+        utils.info_msg('Daemon has been started')
+
+
+    def _signal_handler(self, signum, frame):
+        utils.info_msg('Server receive an exit signal')
+        self._remove_pid_file()
+
+
+    def _remove_pid_file(self):
+        utils.info_msg('Server has has exited')
+        if os.path.exists(self._pid_file):
+            os.remove(self._pid_file)
 
 
 class WebSocket_Server_Base(Deamon, metaclass = abc.ABCMeta):
@@ -277,41 +289,41 @@ class WebSocket_Server_Base(Deamon, metaclass = abc.ABCMeta):
                     self._client_list[readable_fd] = distributer.Distributer(
                         readable_fd,  # socket file descriptor
                         self._write_queue[readable_fd].append,  # send method
-                        self._on_connect,  # connect established handler
-                        self._on_message,  # message received handler
-                        self._on_close,  # connect close handler
-                        self._on_error  # error occurs handler
+                        self._on_connect, self._on_message, self._on_close,
+                        self._on_error
                     )
 
 
     def _frame_distribute(self, socket_fd, receive_frame):
         try:
             self._client_list[socket_fd].distribute(receive_frame)
-        except exceptions.ConnectCLosed as e:
+        except exceptions.ConnectClosed as e:
+            if e.args[0][0] != 1000:
+                utils.info_msg('Client({}:{}) closed'.format(
+                    *socket_fd.getpeername()))
             self._write_queue[socket_fd].append(frame.generate_close_frame(
-                extra_data = str(e), errno = 1002))
+                extra_data = e.args[0][1], errno = e.args[0][0]))
 
 
     # Process Close Request
     def _send_frame(self, socket_fd, send_frame:frame.Frame_Base):
-        if isinstance(send_frame, frame.Frame_Base) and \
-                        send_frame.frame_type == frame.Close_Frame:
-            utils.info_msg('Closing client {}:{}'.format(*socket_fd.getpeername()))
-            # If an endpoint receives a Close frame and did not previously send
-            # a Close frame, the endpoint MUST send a Close frame in response
-            # TODO
-            self._client_list.pop(socket_fd)
-            self._rl.remove(socket_fd)
-            self._wl.remove(socket_fd)
-            print(send_frame)
-        # Normal send frame
-        if isinstance(send_frame, frame.Frame_Base):
-            socket_fd.sendall(send_frame.pack())
-        elif hasattr(send_frame, 'pack'):
-            socket_fd.sendall(send_frame.pack())
-        else:
-            print(send_frame)
-            raise exceptions.SendFrameError('send frame is not base Frame')
+        try:
+            if isinstance(send_frame, frame.Frame_Base) and \
+                            send_frame.frame_type == frame.Close_Frame:
+                self._client_list.pop(socket_fd)
+                self._rl.remove(socket_fd)
+                self._wl.remove(socket_fd)
+
+            # Normal send frame
+            if isinstance(send_frame, frame.Frame_Base):
+                socket_fd.sendall(send_frame.pack())
+            elif hasattr(send_frame, 'pack'):
+                socket_fd.sendall(send_frame.pack())
+            else:
+                print(send_frame)
+                raise exceptions.SendFrameError('send frame is not base Frame')
+        except Exception as e:
+            pass
 
 
     def _write_list_handler(self, wl):
@@ -351,13 +363,19 @@ class WebSocket_Simple_Server(WebSocket_Server_Base):
     # On receive frame called.
     def _frame_distribute(self, socket_fd, receive_frame):
         # other operate
-        super(WebSocket_Simple_Server, self)._frame_distribute(socket_fd, receive_frame)
+        super(WebSocket_Simple_Server, self)._frame_distribute(socket_fd,
+                                                               receive_frame)
 
 
     # Send frame process
     def _send_frame(self, socket_fd, send_frame):
         # other operate
         super(WebSocket_Simple_Server, self)._send_frame(socket_fd, send_frame)
+
+
+    @property
+    def is_debug(self):
+        return self._debug_mode
 
 
     def __enter__(self):
@@ -374,7 +392,8 @@ def create_websocket_server(host = 'localhost', port = 8999, *,
                             logging_level = logging.INFO,
                             log_file = None):
     with WebSocket_Simple_Server(host, port, debug = debug) as server:
-        utils.logger_init(logging_level, console = debug, log_file = log_file)
+        utils.logger_init(logging_level, console = server.is_debug,
+                          log_file = log_file)
         return server
 
 

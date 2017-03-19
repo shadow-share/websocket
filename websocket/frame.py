@@ -569,4 +569,3 @@ class FileMessage(BinaryMessage):
                 super(FileMessage, self).__init__(buffer, from_client)
         except Exception:
             raise
-

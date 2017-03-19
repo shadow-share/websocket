@@ -41,7 +41,6 @@ class Distributer(object):
         # Accept http-handshake
         self._accept_request()
 
-
     def distribute(self, receive_frame):
         if receive_frame.frame_type in (frame.Text_Frame, frame.Binary_Frame):
             try:
@@ -50,9 +49,10 @@ class Distributer(object):
                     raise TypeError('message handler return type must be a Frame')
                 self._send(response_frame.message)
             except Exception as e:
-                logging.error('On Client({}:{}) Error Occurs({})'.format(
+                # error occurs but handler not solution
+                logging.error('Client({}:{}) Error Occurs({})'.format(
                     *self._socket_fd.getpeername(), str(e)))
-                raise exceptions.ConnectCLosed(e)
+                raise exceptions.ConnectClosed((1002, str(e)))
         else:
             if receive_frame.flag_opcode is 0x8:
                 self._on_receive_close_frame(receive_frame)
@@ -161,6 +161,8 @@ class Distributer(object):
 
 
     def _on_receive_close_frame(self, close_frame):
-        self._close_handler(close_frame.payload_data if close_frame.payload_data else None)
-        raise exceptions.ConnectCLosed
+        self._close_handler(close_frame.payload_data)
+        # If an endpoint receives a Close frame and did not previously send
+        # a Close frame, the endpoint MUST send a Close frame in response
+        raise exceptions.ConnectClosed((1000, ''))
 

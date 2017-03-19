@@ -9,6 +9,7 @@ In `httpd.conf`
 ```
 
 In `httpd-vhosts.conf`
+> some header-fields was deleted?
 ```
 <VirtualHost *:8080>
     DocumentRoot "path/to/document-root"

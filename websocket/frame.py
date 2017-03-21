@@ -170,19 +170,19 @@ def parse_frame_length(frame_header):
     if payload_length <= 125:
         # if frame is client-to-server, payload length does not include mask-key(4-byte)
         if octet_array[1][0] is 1:
-            return len(octet_array), payload_length + 6
-        return len(octet_array), payload_length + 2
+            return payload_length + 6
+        return payload_length + 2
     # If 126, the following 2 bytes interpreted as a
     # 16-bit unsigned integer are the payload length
     elif payload_length == 126:
         # Payload length field is in [2-4)bytes
         if len(octet_array) < 4:
             raise exceptions.FrameHeaderParseError(
-                'payload length flag is 126, but header length is {}'.format(len(octet_array))
-            )
+                'payload length flag is 126, but header length is {}'.format(
+                    len(octet_array)))
         if octet_array[1][0] is 1:
-            return len(octet_array), utils.octet_to_number(utils.flatten_list(octet_array[2:4])) + 8
-        return len(octet_array), utils.octet_to_number(utils.flatten_list(octet_array[2:4])) + 4
+            return utils.octet_to_number(utils.flatten_list(octet_array[2:4])) + 8
+        return utils.octet_to_number(utils.flatten_list(octet_array[2:4])) + 4
     # If 127, the following 8 bytes interpreted as a
     # 64-bit unsigned integer (the most significant bit
     # MUST be 0) are the payload length.
@@ -190,29 +190,12 @@ def parse_frame_length(frame_header):
         # Payload length field is in [2-10)bytes
         if len(octet_array) < 10:
             raise exceptions.FrameHeaderParseError(
-                'payload length flag is 127, but header length is {}'.format(len(octet_array))
-            )
+                'payload length flag is 127, but header length is {}'.format(
+                    len(octet_array)))
         if octet_array[1][0] is 1:
-            return len(octet_array), utils.octet_to_number(utils.flatten_list(octet_array[2:4])) + 14
-        return len(octet_array), utils.octet_to_number(utils.flatten_list(octet_array[2:4])) + 10
+            return utils.octet_to_number(utils.flatten_list(octet_array[2:4])) + 14
+        return utils.octet_to_number(utils.flatten_list(octet_array[2:4])) + 10
     raise exceptions.FatalError('internal error')
-
-
-def receive_single_frame(socket_fd):
-    if not isinstance(socket_fd, socket.socket):
-        raise KeyError('socket_fd must be socket.socket instance')
-    # if frame is server send to client, and Payload_length = 127.
-    # then this frame header is 10-bytes. Or less
-    frame_contents = socket_fd.recv(10)
-    received_length = frame_length = len(frame_contents)
-    try:
-        received_length, frame_length = parse_frame_length(frame_contents)
-    except exceptions.FrameHeaderParseError as e:
-            raise
-    while len(frame_contents) < frame_length:
-        frame_contents += socket_fd.recv(frame_length - received_length)
-        received_length = len(frame_contents)
-    return frame_contents
 
 
 # using for judge frame type
@@ -220,7 +203,7 @@ Text_Frame = b'Text Frame'
 Binary_Frame = b'Binary Frame'
 Close_Frame = b'Close Frame'
 
-class Frame_Base(object, metaclass = abc.ABCMeta):
+class FrameBase(object, metaclass = abc.ABCMeta):
 
     _global_frame_type = {
         0x0: b'Continuation Frame',
@@ -389,17 +372,17 @@ class Frame_Base(object, metaclass = abc.ABCMeta):
         return self.__str__()
 
 
-class Frame_Parser(Frame_Base):
+class WebSocketFrame(FrameBase):
+    
+    def __init__(self, raw_websocket_data):
+        super(WebSocketFrame, self).__init__(utils.string_to_bit_array(
+            raw_websocket_data))
 
-    def __init__(self, socket_fd):
-        bit_array = utils.string_to_bit_array(receive_single_frame(socket_fd))
-        super(Frame_Parser, self).__init__(bit_array)
 
-
-class Frame_Generator(Frame_Base):
+class FrameGenerator(FrameBase):
 
     def __init__(self):
-        super(Frame_Generator, self).__init__([ 0 ] * 16) # 2-bytes
+        super(FrameGenerator, self).__init__([0] * 16) # 2-bytes
 
         # first-byte information
         self._flag_fin = 1
@@ -474,7 +457,7 @@ class Frame_Generator(Frame_Base):
 
 def _build_base_frame(from_client, extra_data):
     # create a frame
-    rst_frame = Frame_Generator()
+    rst_frame = FrameGenerator()
     # judge is client-to-server
     if from_client:
         rst_frame.set_mask_key(websocket_utils.ws_generate_frame_mask_key())
@@ -521,21 +504,15 @@ class TextMessage(object):
 
     def __init__(self, message, from_client = False):
         if not isinstance(message, (str, bytes)):
-            raise TypeError('message must be str ot bytes type')
+            raise TypeError('message must be str or bytes type')
         self._message = message
         self._from_client = from_client
 
 
     @property
-    def message(self):
+    def generate_frame(self):
         return generate_text_frame(self._message, self._from_client)
 
-
-    @message.setter
-    def message(self, message):
-        if not isinstance(message, (str, bytes)):
-            raise TypeError('message must be str ot bytes type')
-        self._message = message
 
 
 class FileTextMessage(TextMessage):
@@ -543,8 +520,7 @@ class FileTextMessage(TextMessage):
     def __init__(self, file_name, from_client = False):
         try:
             with open(file_name, 'r') as fd:
-                buffer = fd.read(os.path.getsize(file_name))
-                super(FileTextMessage, self).__init__(buffer, from_client)
+                super(FileTextMessage, self).__init__(fd.read(), from_client)
         except Exception:
             raise
 
@@ -552,20 +528,21 @@ class FileTextMessage(TextMessage):
 class BinaryMessage(TextMessage):
 
     def __init__(self, contents, from_client = False):
+        if isinstance(contents, bytes):
+            raise TypeError('binary frame must be bytes type')
         super(BinaryMessage, self).__init__(contents, from_client)
 
 
     @property
-    def message(self):
+    def generate_frame(self):
         return generate_binary_frame(self._message, self._from_client)
 
 
-class FileMessage(BinaryMessage):
+class FileBinaryMessage(BinaryMessage):
 
     def __init__(self, file_name, from_client = False):
         try:
             with open(file_name, 'rb') as fd:
-                buffer = fd.read(os.path.getsize(file_name))
-                super(FileMessage, self).__init__(buffer, from_client)
+                super(FileBinaryMessage, self).__init__(fd.read(), from_client)
         except Exception:
             raise

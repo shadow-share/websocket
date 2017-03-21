@@ -132,8 +132,8 @@ import signal
 import socket
 import logging
 from collections import deque, OrderedDict
-from websocket import utils, frame, http, websocket_utils, \
-    distributer, exceptions, websocket_handler
+from websocket.distributer import Distributer
+from websocket import utils, frame, exceptions, websocket_handler
 
 
 class Deamon(object):
@@ -190,7 +190,7 @@ class Deamon(object):
         sys.stderr.flush()
         _stdin = open(self._stdin, 'r')
         _stdout = open(self._stdout, 'a')
-        _stderr = open(self._stderr, 'a', buffering = 0)
+        _stderr = open(self._stderr, 'wb+', buffering = 0)
         os.dup2(_stdin.fileno(), sys.stdin.fileno())
         os.dup2(_stdout.fileno(), sys.stdout.fileno())
         os.dup2(_stderr.fileno(), sys.stderr.fileno())
@@ -212,9 +212,10 @@ class Deamon(object):
 
 
     def _remove_pid_file(self):
-        utils.info_msg('Server has has exited')
+        utils.info_msg('Server has exited')
         if os.path.exists(self._pid_file):
             os.remove(self._pid_file)
+        exit()
 
 
 class WebSocket_Server_Base(Deamon, metaclass = abc.ABCMeta):
@@ -227,25 +228,25 @@ class WebSocket_Server_Base(Deamon, metaclass = abc.ABCMeta):
         else:
             super(WebSocket_Server_Base, self).__init__(debug = debug)
         # all handshake client
-        self._client_list = {} # type: dict
+        self._client_list = {} # type: dict()
         # Server address information
         self._server_address = (host, port) # type: tuple
         # Write queue
         self._write_queue = OrderedDict()
         # handler initialize
-        self._on_connect = None
-        self._on_message = None
-        self._on_close = None
-        self._on_error = None
+        self._handlers = None # type: tuple()
+
 
     def set_handler(self, ws_handlers):
         if not isinstance(ws_handlers, websocket_handler.WebSocket_Handler):
-            raise TypeError(
-                'the websocket handlers must be base on WebSocket_Handler')
-        self._on_connect = ws_handlers.on_connect
-        self._on_message = ws_handlers.on_message
-        self._on_close = ws_handlers.on_close
-        self._on_error = ws_handlers.on_error
+            raise TypeError('handlers must be derived with WebSocket_Handler')
+        self._handlers = (
+            ws_handlers.on_connect,
+            ws_handlers.on_message,
+            ws_handlers.on_close,
+            ws_handlers.on_error
+        )
+
 
     def run_forever(self):
         super(WebSocket_Server_Base, self).run_forever()
@@ -262,10 +263,10 @@ class WebSocket_Server_Base(Deamon, metaclass = abc.ABCMeta):
         # enter the main loop
         self._select_loop()
 
+
     def _select_loop(self):
         # in the begin, read-list have only server socket
-        self._rl, self._wl, self._xl = deque(
-            [self._server_fd]), deque(), deque()
+        self._rl, self._wl, self._xl = deque([self._server_fd]), deque(), deque()
 
         while True:
             rl, wl, el = select.select(self._rl, self._wl, self._xl)
@@ -274,29 +275,27 @@ class WebSocket_Server_Base(Deamon, metaclass = abc.ABCMeta):
             self._write_list_handler(wl)
             self._error_list_handler(el)
 
+
     def _read_list_handler(self, rl):
         for readable_fd in rl:
             if readable_fd == self._server_fd:
                 self._accept_client()
-            else:
-                if readable_fd in self._client_list:
-                    self._frame_distribute(readable_fd,
-                                           frame.Frame_Parser(readable_fd))
-                else:
-                    # write queue for single socket descriptor
-                    self._write_queue[readable_fd] = deque() # type: deque
-                    # Received data is an HTTP request
-                    self._client_list[readable_fd] = distributer.Distributer(
-                        readable_fd,  # socket file descriptor
-                        self._write_queue[readable_fd].append,  # send method
-                        self._on_connect, self._on_message, self._on_close,
-                        self._on_error
-                    )
+                continue
+
+            if readable_fd in self._client_list:
+                self._frame_distribute(readable_fd)
+                continue
+
+            # write queue for single socket descriptor
+            self._write_queue[readable_fd] = deque() # type: deque
+            # Received data is an HTTP request
+            self._client_list[readable_fd] = Distributer(readable_fd,
+                self._write_queue[readable_fd].append, *self._handlers)
 
 
-    def _frame_distribute(self, socket_fd, receive_frame):
+    def _frame_distribute(self, socket_fd):
         try:
-            self._client_list[socket_fd].distribute(receive_frame)
+            self._client_list[socket_fd].ready_receive()
         except exceptions.ConnectClosed as e:
             if e.args[0][0] != 1000:
                 utils.info_msg('Client({}:{}) closed'.format(
@@ -306,16 +305,16 @@ class WebSocket_Server_Base(Deamon, metaclass = abc.ABCMeta):
 
 
     # Process Close Request
-    def _send_frame(self, socket_fd, send_frame:frame.Frame_Base):
+    def _send_frame(self, socket_fd, send_frame:frame.FrameBase):
         try:
-            if isinstance(send_frame, frame.Frame_Base) and \
+            if isinstance(send_frame, frame.FrameBase) and \
                             send_frame.frame_type == frame.Close_Frame:
                 self._client_list.pop(socket_fd)
                 self._rl.remove(socket_fd)
                 self._wl.remove(socket_fd)
 
             # Normal send frame
-            if isinstance(send_frame, frame.Frame_Base):
+            if isinstance(send_frame, frame.FrameBase):
                 socket_fd.sendall(send_frame.pack())
             elif hasattr(send_frame, 'pack'):
                 socket_fd.sendall(send_frame.pack())
@@ -361,10 +360,9 @@ class WebSocket_Simple_Server(WebSocket_Server_Base):
 
 
     # On receive frame called.
-    def _frame_distribute(self, socket_fd, receive_frame):
+    def _frame_distribute(self, socket_fd):
         # other operate
-        super(WebSocket_Simple_Server, self)._frame_distribute(socket_fd,
-                                                               receive_frame)
+        super(WebSocket_Simple_Server, self)._frame_distribute(socket_fd)
 
 
     # Send frame process

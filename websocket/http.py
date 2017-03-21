@@ -82,6 +82,9 @@ class HttpMessage(object, metaclass = abc.ABCMeta):
     def __repr__(self):
         return '<{} Hello World>'.format(self.__class__.__str__())
 
+    def __contains__(self, item):
+        return utils.to_bytes(item).lower() in self._header_fields
+
     @property
     def http_version(self):
         return self._http_version

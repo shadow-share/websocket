@@ -32,6 +32,7 @@ class Simple_Handler(websocket_handler.WebSocket_Handler):
     def on_error(self, socket_name):
         pass
 
+# TODO. When a client takes up socket.recv when other client unable to establish connection
 
 ws_server = websocket_server.create_websocket_server(host = '0.0.0.0',
                                                      port = 8999, debug = False)

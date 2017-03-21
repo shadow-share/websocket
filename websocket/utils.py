@@ -28,7 +28,7 @@ def to_bytes(string, encoding = 'utf-8'):
         if hasattr(string, 'encode'):
             return string.encode(encoding)
         else:
-            raise KeyError('the string has\'t encode method')
+            raise KeyError('the {} has\'t encode method'.format(type(string)))
     elif isinstance(string, bytes):
         return string
     else:
@@ -231,15 +231,6 @@ def logger_init(level, console = False, log_file = None):
             func(message)
 
 
-def http_header_compare(http_message, key, need_value):
-    if not isinstance(http_message, http.HttpMessage):
-        raise TypeError('http message type not allow')
-    value = http_message[key].value
-    if value is None:
-        raise KeyError('in http message \'{key}\' not found'.format(key = key))
-    return to_string(value) == to_string(need_value)
-
-
 def debug_msg(message):
     logging.debug(message)
 
@@ -254,4 +245,13 @@ def warning_msg(message):
 
 def error_msg(message):
     logging.error(message)
+
+
+def http_header_compare(http_message, key, need_value):
+    if not isinstance(http_message, http.HttpMessage):
+        raise TypeError('http message type not allow')
+    value = http_message[key].value
+    if value is None:
+        raise KeyError('in http message \'{key}\' not found'.format(key = key))
+    return to_string(value) == to_string(need_value)
 

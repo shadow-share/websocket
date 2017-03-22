@@ -127,8 +127,7 @@ import logging
 import os
 import struct
 
-from utils import exceptions
-from websocket.utils import transform, ws_utils
+from websocket.utils import transform, ws_utils, exceptions
 
 def ws_transform_payload_data(data, mask_key):
     if not isinstance(mask_key, (int)):

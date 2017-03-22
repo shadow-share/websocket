@@ -32,7 +32,7 @@ class SimpleHandler(handler.WebSocketHandlerProtocol):
 
 
 
-ws_server = websocket.create_websocket_server('0.0.0.0', port = 8999, debug = False)
+ws_server = websocket.create_websocket_server('0.0.0.0', port = 8999, debug = True)
 
 ws_server.set_handler(SimpleHandler())
 ws_server.run_forever()

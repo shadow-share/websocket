@@ -2,39 +2,37 @@
 #
 # Copyright (C) 2017 ShadowMan
 #
-from websocket import websocket_server, frame, websocket_handler, utils
+import websocket
+from websocket.ext import handler
 
 
-class Simple_Handler(websocket_handler.WebSocket_Handler):
-
+class SimpleHandler(handler.WebSocketHandlerProtocol):
+    
     def __init__(self):
-        super(Simple_Handler, self).__init__()
-        self._socket_name = None  # type: tuple
-
+        self._socket_name = None
+        super(SimpleHandler, self).__init__()
 
     def on_connect(self, socket_name):
         self._socket_name = socket_name
-        utils.info_msg('Client({}:{}) connected'.format(*socket_name))
-
+        websocket.logger.info('client({}:{}) connected'.format(*socket_name))
 
     def on_message(self, message):
-        try:
-            return frame.FileTextMessage(message)
-        except Exception as e:
-            raise
-            # return frame.TextMessage(str(e))
+        websocket.logger.info('client({}:{}) send message `{}`'.format(
+            *self._socket_name, message.decode('utf-8')))
+
+    def on_close(self, code, reason):
+        websocket.logger.info('client({}:{}) closed {}:{}'.format(
+            *self._socket_name, code, reason
+        ))
+
+    def on_error(self, code, reason):
+        websocket.logger.warning('client({}:{}) error occurs'.format(
+            *self._socket_name
+        ))
 
 
-    def on_close(self, close_reason):
-        utils.info_msg('Client({}:{}) closed'.format(*self._socket_name))
 
+ws_server = websocket.create_websocket_server('0.0.0.0', port = 8999, debug = False)
 
-    def on_error(self, socket_name):
-        pass
-
-# TODO. When a client takes up socket.recv when other client unable to establish connection
-
-ws_server = websocket_server.create_websocket_server(host = '0.0.0.0',
-                                                     port = 8999, debug = False)
-ws_server.set_handler(Simple_Handler())
+ws_server.set_handler(SimpleHandler())
 ws_server.run_forever()

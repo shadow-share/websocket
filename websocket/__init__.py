@@ -7,14 +7,18 @@ import sys
 # Package name
 PKG_NAME = 'websocket'
 # Package version
-VERSION = '0.0.1'
-__version__ = VERSION
+PKG_VERSION = '0.0.1'
 
+__doc__ = '''Websocket server and client write by python3
 
-class VersionError(Exception):
+'''
+
+class PythonVersionError(Exception):
     pass
 
 
 if sys.version_info[0] < 3:
-    raise VersionError('websocket package only run under the Python3.X')
+    raise PythonVersionError('websocket module only run under the python3+')
 
+from websocket.server import *
+from websocket.utils import logger

@@ -3,17 +3,11 @@
 # Copyright (C) 2017 ShadowMan
 #
 from setuptools import setup
-from websocket import PKG_NAME, VERSION
+from websocket import PKG_NAME, PKG_VERSION
 
 setup(
     name = PKG_NAME,
-    version = VERSION,
+    version = PKG_VERSION,
     description = 'websocket server and client by python',
-    packages = [ 'websocket' ],
-    entry_points={
-        'console_scripts': [
-            'wsclient = websocket.shell:client',
-            'wsserver = websocket.shell:server'
-        ],
-    }
+    packages = [ 'websocket', 'websocket.utils' ]
 )

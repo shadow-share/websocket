@@ -2,4 +2,3 @@
 #
 # Copyright (C) 2017 ShadowMan
 #
-import abc

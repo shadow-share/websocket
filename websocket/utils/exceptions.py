@@ -27,6 +27,12 @@ class DeamonError(Exception):
     pass
 
 
-class SendFrameError(Exception):
+class SendDataPackError(Exception):
     pass
+
+
+class InvalidResponse(Exception):
+    pass
+
+
 

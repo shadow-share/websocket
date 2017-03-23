@@ -19,6 +19,7 @@ class SimpleHandler(handler.WebSocketHandlerProtocol):
     def on_message(self, message):
         websocket.logger.info('client({}:{}) send message `{}`'.format(
             *self._socket_name, message.decode('utf-8')))
+        raise Exception('text server close')
 
     def on_close(self, code, reason):
         websocket.logger.info('client({}:{}) closed {}:{}'.format(
@@ -31,8 +32,8 @@ class SimpleHandler(handler.WebSocketHandlerProtocol):
         ))
 
 
-
 ws_server = websocket.create_websocket_server('0.0.0.0', port = 8999, debug = True)
+
 
 ws_server.set_handler(SimpleHandler())
 ws_server.run_forever()

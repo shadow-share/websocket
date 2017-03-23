@@ -120,8 +120,7 @@ Third fragment
 # the WebSocket connection changes, the endpoint MUST abort the
 # following steps.
 
-# If the data is being sent by the client, the frame(s) MUST be
-# masked as defined in Section 5.3.
+# If the data is being sent by the client, the frame(s) MUST be masked
 import os
 import abc
 import sys
@@ -130,7 +129,6 @@ import select
 import signal
 import socket
 import selectors
-import contextlib
 from collections import deque, OrderedDict
 
 from websocket.utils import (
@@ -155,25 +153,23 @@ class Deamon(object):
         self._stdout = stdout  # type: str
         self._stderr = stderr  # type: str
         if pid_file is None:
-            pid_file = '/tmp/python_websocket.pid'
+            pid_file = '/tmp/websocket_server.pid'
         self._pid_file = os.path.abspath(pid_file)  # type: str
 
 
     def run_forever(self):
-        if not self._debug and os.path.exists(self._pid_file):
-            raise exceptions.DeamonError(
-                'pid file already exists, Deamon running?')
-        elif self._debug:
-            # logging
+        if self._debug:
             logger.warning('Debugger is active!')
-        else:
-            if os.path.isfile(self._pid_file):
-                logger.error_exit('pid file exists, deamon running?')
-            self._start_deamon()
+            return
+
+        if os.path.isfile(self._pid_file):
+            raise exceptions.DeamonError(
+                'pid file already exists, server running?')
+        self._start_deamon()
 
 
     def _start_deamon(self):
-        if os.name == 'nt' or not hasattr(os, 'fork'):
+        if self._debug is False and (os.name == 'nt' or not hasattr(os, 'fork')):
             raise exceptions.DeamonError('Windows does not support fork')
         # double fork create a deamon
         try:
@@ -231,6 +227,9 @@ class Deamon(object):
 
 class WebSocketServerBase(Deamon, metaclass = abc.ABCMeta):
 
+    # max listen queue size
+    LISTEN_SIZE = 16
+
     def __init__(self, host, port, *, pid_file = None, debug = False):
         # start deamon
         super(WebSocketServerBase, self).__init__(pid_file = pid_file,
@@ -243,6 +242,8 @@ class WebSocketServerBase(Deamon, metaclass = abc.ABCMeta):
         self._write_queue = OrderedDict()
         # handler initialize
         self._handlers = None # type: tuple()
+        # close frame information (from_endpoint, is receive/send close)
+        self._close_information = (None, False)
 
 
     def set_handler(self, ws_handlers):
@@ -254,12 +255,13 @@ class WebSocketServerBase(Deamon, metaclass = abc.ABCMeta):
         self._handlers = ws_handlers.export()
 
 
-    def set_controller(self, controller):
+    def set_controller(self, controller:str):
         pass
 
 
     # TODO. controller
     def run_forever(self):
+        # Start deamon on background
         super(WebSocketServerBase, self).run_forever()
         # Create server socket file descriptor
         self._server_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -267,9 +269,10 @@ class WebSocketServerBase(Deamon, metaclass = abc.ABCMeta):
         self._server_fd.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         # Set using non-block socket
         self._server_fd.setblocking(False)
-        # Start server
+        # Bind server listen port
         self._server_fd.bind(self._server_address)
-        self._server_fd.listen(16)
+        # Max connect queue size
+        self._server_fd.listen(WebSocketServer.LISTEN_SIZE)
         logger.info('Server running in {}:{}'.format(*self._server_address))
         # enter the main loop
         self._select_loop()
@@ -300,23 +303,35 @@ class WebSocketServerBase(Deamon, metaclass = abc.ABCMeta):
                 continue
 
             if readable_fd in self._client_list:
-                self._frame_distribute(readable_fd)
+                self._socket_ready_receive(readable_fd)
                 continue
 
             # write queue for single socket descriptor
             self._write_queue[readable_fd] = deque() # type: deque
             # Received data is an HTTP request
-            self._client_list[readable_fd] = plain_spliter.PlainController(readable_fd,
-                self._write_queue[readable_fd].append, *self._handlers)
+            self._client_list[readable_fd] = plain_spliter.PlainController(
+                readable_fd, self._write_queue[readable_fd].append,
+                *self._handlers)
 
 
-    def _frame_distribute(self, socket_fd):
+    def _socket_ready_receive(self, socket_fd):
         try:
             self._client_list[socket_fd].ready_receive()
         except exceptions.ConnectClosed as e:
+            # from server close
+            if self._close_information[0] is None:
+                # TODO. handler send close-frame
+                if e.args[0][0] == 1000:
+                    # client first send close-frame
+                    self._close_information = ('client', False)
+            else:
+                self._close_information = (self._close_information[0], True)
+                self._close_client(socket_fd)
+
             if e.args[0][0] != 1000:
-                logger.info('Client({}:{}) closed, reason({code})'.format(
-                    *socket_fd.getpeername(), code = e.args[0][0]))
+                logger.info('Server active close-frame, reason({})'.format(
+                    e.args[0][0]))
+
             self._write_queue[socket_fd].append(ws_frame.generate_close_frame(
                 extra_data = e.args[0][1], errno = e.args[0][0]))
 
@@ -326,24 +341,28 @@ class WebSocketServerBase(Deamon, metaclass = abc.ABCMeta):
             if writeable_fd in self._client_list:
                 while len(self._write_queue[writeable_fd]):
                     # first call ChildClass::_send_frame
-                    self._send_frame(writeable_fd,
-                                     self._write_queue[writeable_fd].popleft())
+                    self._socket_ready_write(writeable_fd,
+                                self._write_queue[writeable_fd].popleft())
 
 
     # Process Close Request
-    def _send_frame(self, socket_fd, send_frame:ws_frame.FrameBase):
+    def _socket_ready_write(self, socket_fd, data_pack:ws_frame.FrameBase):
         try:
-            if isinstance(send_frame, ws_frame.FrameBase) and \
-                            send_frame.frame_type == ws_frame.Close_Frame:
-                self._client_list.pop(socket_fd)
-                self._rl.remove(socket_fd)
+            if isinstance(data_pack, ws_frame.FrameBase) and \
+                            data_pack.frame_type == ws_frame.Close_Frame:
+                # from server(normal or error occurs) first send close-frame
+                if self._close_information[0] is None:
+                    self._close_information = ('server', False)
+                else:
+                    self._close_information = (self._close_information[0], True)
                 self._wl.remove(socket_fd)
-                # TODO. wait client send close-frame
-                socket_fd.close()
-            if hasattr(send_frame, 'pack'):
-                socket_fd.sendall(send_frame.pack())
+            if hasattr(data_pack, 'pack'):
+                logger.debug('Response: {}'.format(data_pack))
+                socket_fd.sendall(data_pack.pack())
             else:
-                raise exceptions.SendFrameError('send frame is not base Frame')
+                raise exceptions.SendDataPackError('data pack invalid')
+            if self._close_information[1] is True:
+                self._close_client(socket_fd)
         except Exception:
             raise
 
@@ -359,6 +378,17 @@ class WebSocketServerBase(Deamon, metaclass = abc.ABCMeta):
         self._rl.append(client_fd)
         self._wl.append(client_fd)
 
+    def _close_client(self, socket_fd):
+        logger.debug('Client({}:{}) socket fd closed'.format(
+            *socket_fd.getpeername()))
+
+        if socket_fd in self._rl:
+            self._rl.remove(socket_fd)
+        if socket_fd in self._wl:
+            self._wl.remove(socket_fd)
+        self._client_list.pop(socket_fd)
+        socket_fd.close()
+
 
 class WebSocketServer(WebSocketServerBase):
 
@@ -372,15 +402,15 @@ class WebSocketServer(WebSocketServerBase):
 
 
     # On receive frame called.
-    def _frame_distribute(self, socket_fd):
+    def _socket_ready_receive(self, socket_fd):
         # other operate
-        super(WebSocketServer, self)._frame_distribute(socket_fd)
+        super(WebSocketServer, self)._socket_ready_receive(socket_fd)
 
 
     # Send frame process
-    def _send_frame(self, socket_fd, send_frame):
+    def _socket_ready_write(self, socket_fd, data_pack:ws_frame.FrameBase):
         # other operate
-        super(WebSocketServer, self)._send_frame(socket_fd, send_frame)
+        super(WebSocketServer, self)._socket_ready_write(socket_fd, data_pack)
 
 
     @property
@@ -395,6 +425,7 @@ class WebSocketServer(WebSocketServerBase):
     def __exit__(self, exc_type, exc_val, exc_tb):
         if exc_type and exc_tb:
             raise exc_val
+
 
 def create_websocket_server(host = 'localhost', port = 8999, *, debug = False,
                             logging_level = 'info', log_file = None):

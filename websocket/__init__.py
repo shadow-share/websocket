@@ -24,3 +24,6 @@ if sys.version_info[0] < 3:
 from websocket.server import *
 # import logger
 from websocket.utils import logger
+# import all response type
+from websocket.net.ws_frame import TextMessage, FileTextMessage, \
+    BinaryMessage, FileBinaryMessage

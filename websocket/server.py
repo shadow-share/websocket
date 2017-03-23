@@ -125,7 +125,6 @@ import os
 import abc
 import sys
 import atexit
-import select
 import signal
 import socket
 import selectors
@@ -243,7 +242,7 @@ class WebSocketServerBase(Deamon, metaclass = abc.ABCMeta):
         # handler initialize
         self._handlers = None # type: tuple()
         # close frame information (from_endpoint, is receive/send close)
-        self._close_information = (None, False)
+        self._close_information = dict()
 
 
     def set_handler(self, ws_handlers):
@@ -279,39 +278,24 @@ class WebSocketServerBase(Deamon, metaclass = abc.ABCMeta):
 
 
     def _select_loop(self):
-        # in the begin, read-list have only server socket
-        self._rl, self._wl, self._xl = deque([self._server_fd]), deque(), deque()
+        self._selector = selectors.DefaultSelector()
+        self._selector.register(self._server_fd,
+                                selectors.EVENT_READ, self._accept_client)
 
         try:
             while True:
-                # TODO. using selector module
-                # selectors.BaseSelector()
-                rl, wl, el = select.select(self._rl, self._wl, self._xl)
+                events = self._selector.select()
 
-                self._read_list_handler(rl)
-                self._write_list_handler(wl)
-                self._error_list_handler(el)
-        except KeyboardInterrupt: # when start debug mode check Ctrl-C
+                for key, mask in events:
+                    # accept new client
+                    callback = key.data
+                    callback(key.fileobj)
+                self._clean_write_queue()
+        except KeyboardInterrupt:  # when start debug mode check Ctrl-C
             logger.info('<Ctrl + C> Bye, Never BUG')
             exit()
-
-
-    def _read_list_handler(self, rl):
-        for readable_fd in rl:
-            if readable_fd == self._server_fd:
-                self._accept_client()
-                continue
-
-            if readable_fd in self._client_list:
-                self._socket_ready_receive(readable_fd)
-                continue
-
-            # write queue for single socket descriptor
-            self._write_queue[readable_fd] = deque() # type: deque
-            # Received data is an HTTP request
-            self._client_list[readable_fd] = plain_spliter.PlainController(
-                readable_fd, self._write_queue[readable_fd].append,
-                *self._handlers)
+        except Exception as e:
+            logger.error('Error occurs for {}'.format(repr(e)))
 
 
     def _socket_ready_receive(self, socket_fd):
@@ -319,13 +303,14 @@ class WebSocketServerBase(Deamon, metaclass = abc.ABCMeta):
             self._client_list[socket_fd].ready_receive()
         except exceptions.ConnectClosed as e:
             # from server close
-            if self._close_information[0] is None:
+            if self._close_information[socket_fd][0] is None:
                 # TODO. handler send close-frame
                 if e.args[0][0] == 1000:
                     # client first send close-frame
-                    self._close_information = ('client', False)
+                    self._close_information[socket_fd] = ('client', False)
             else:
-                self._close_information = (self._close_information[0], True)
+                self._close_information[socket_fd] = \
+                            (self._close_information[socket_fd][0], True)
                 self._close_client(socket_fd)
 
             if e.args[0][0] != 1000:
@@ -336,13 +321,13 @@ class WebSocketServerBase(Deamon, metaclass = abc.ABCMeta):
                 extra_data = e.args[0][1], errno = e.args[0][0]))
 
 
-    def _write_list_handler(self, wl):
-        for writeable_fd in wl:
-            if writeable_fd in self._client_list:
-                while len(self._write_queue[writeable_fd]):
-                    # first call ChildClass::_send_frame
-                    self._socket_ready_write(writeable_fd,
-                                self._write_queue[writeable_fd].popleft())
+    def _clean_write_queue(self):
+        _clients = list(self._client_list.keys())
+        for writeable_fd in _clients:
+            while len(self._write_queue[writeable_fd]):
+                # first call ChildClass::_send_frame
+                self._socket_ready_write(writeable_fd,
+                            self._write_queue[writeable_fd].popleft())
 
 
     # Process Close Request
@@ -351,42 +336,47 @@ class WebSocketServerBase(Deamon, metaclass = abc.ABCMeta):
             if isinstance(data_pack, ws_frame.FrameBase) and \
                             data_pack.frame_type == ws_frame.Close_Frame:
                 # from server(normal or error occurs) first send close-frame
-                if self._close_information[0] is None:
-                    self._close_information = ('server', False)
+                if self._close_information[socket_fd][0] is None:
+                    self._close_information[socket_fd] = ('server', False)
                 else:
-                    self._close_information = (self._close_information[0], True)
-                self._wl.remove(socket_fd)
+                    self._close_information[socket_fd] = \
+                                (self._close_information[socket_fd][0], True)
             if hasattr(data_pack, 'pack'):
                 logger.debug('Response: {}'.format(data_pack))
                 socket_fd.sendall(data_pack.pack())
             else:
                 raise exceptions.SendDataPackError('data pack invalid')
-            if self._close_information[1] is True:
+            if self._close_information[socket_fd][1] is True:
                 self._close_client(socket_fd)
         except Exception:
             raise
 
 
-    def _error_list_handler(self, el):
-        pass
-
-
-    def _accept_client(self):
+    def _accept_client(self, server_fd):
         # accept new client
-        client_fd, client_address = self._server_fd.accept()
-        # append to read_list and write_list
-        self._rl.append(client_fd)
-        self._wl.append(client_fd)
+        client_fd, client_address = server_fd.accept()
+        # set non=blocking
+        client_fd.setblocking(False)
+        # register listen EVENT_READ
+        self._selector.register(client_fd,
+                        selectors.EVENT_READ, self._socket_ready_receive)
+
+        # record close information
+        self._close_information[client_fd] = (None, False)
+        # write queue for single socket descriptor
+        self._write_queue[client_fd] = deque()  # type: deque
+        # Received data is an HTTP request
+        self._client_list[client_fd] = plain_spliter.PlainController(
+            client_fd, self._write_queue[client_fd].append, *self._handlers)
+
 
     def _close_client(self, socket_fd):
         logger.debug('Client({}:{}) socket fd closed'.format(
             *socket_fd.getpeername()))
 
-        if socket_fd in self._rl:
-            self._rl.remove(socket_fd)
-        if socket_fd in self._wl:
-            self._wl.remove(socket_fd)
+        self._selector.unregister(socket_fd)
         self._client_list.pop(socket_fd)
+        self._close_information.pop(socket_fd)
         socket_fd.close()
 
 

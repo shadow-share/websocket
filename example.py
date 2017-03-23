@@ -2,6 +2,7 @@
 #
 # Copyright (C) 2017 ShadowMan
 #
+import random
 import websocket
 from websocket.ext import handler
 
@@ -19,7 +20,9 @@ class SimpleHandler(handler.WebSocketHandlerProtocol):
     def on_message(self, message):
         websocket.logger.info('client({}:{}) send message `{}`'.format(
             *self._socket_name, message.decode('utf-8')))
-        raise Exception('text server close')
+        if random.randint(0, 100) < 5:
+            raise Exception('test close connection')
+        return websocket.TextMessage('Hello World')
 
     def on_close(self, code, reason):
         websocket.logger.info('client({}:{}) closed {}:{}'.format(

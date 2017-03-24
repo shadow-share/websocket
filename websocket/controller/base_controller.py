@@ -116,7 +116,7 @@ class BaseController(object, metaclass = abc.ABCMeta):
             raise
         except Exception as e:
             # error occurs but handler not solution
-            logger.error('Client({}:{}) Error Occurs({})'.format(
+            logger.error('Client({}:{}) Error occurs({})'.format(
                 *self._socket_fd.getpeername(), str(e)))
             raise exceptions.ConnectClosed((1002, str(e)))
 

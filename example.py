@@ -18,7 +18,7 @@ class SimpleHandler(handler.WebSocketHandlerProtocol):
         websocket.logger.info('client({}:{}) connected'.format(*socket_name))
 
     def on_message(self, message):
-        websocket.logger.info('client({}:{}) send message `{}`'.format(
+        websocket.logger.info('client({}:{}) receive message `{}`'.format(
             *self._socket_name, message.decode('utf-8')))
         if random.randint(0, 100) < 5:
             raise Exception('test close connection')

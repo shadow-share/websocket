@@ -35,4 +35,6 @@ class InvalidResponse(Exception):
     pass
 
 
+class ParameterError(Exception):
+    pass
 

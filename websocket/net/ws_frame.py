@@ -122,12 +122,13 @@ Application data:  y bytes
       data".
 
 '''
-import abc
-import logging
 import os
+import abc
 import struct
 
-from websocket.utils import transform, ws_utils, exceptions
+from websocket.utils import (
+    generic, ws_utils, exceptions, packet, logger
+)
 
 def ws_transform_payload_data(data, mask_key):
     if not isinstance(mask_key, (int)):
@@ -150,7 +151,7 @@ def ws_transform_payload_data(data, mask_key):
     }
 
     transformed_string = b''
-    for index, value in enumerate(transform.to_bytes(data)):
+    for index, value in enumerate(generic.to_bytes(data)):
         transformed_string += struct.pack('!B', (
         value ^ mask_key_octet[index % 4]) & 0xff)
     return transformed_string
@@ -159,45 +160,45 @@ def ws_transform_payload_data(data, mask_key):
 def parse_frame_length(frame_header):
     if not isinstance(frame_header, (str, bytes)):
         raise KeyError('frame_header must be str or bytes type')
-    octet_array = transform.string_to_octet_array(frame_header)
-    if len(octet_array) < 2:
-        logging.warning(
-            'receive less than 2-bytes, octets={}'.format(octet_array))
+    header = packet.ByteArray(frame_header)
+    if len(header) < 2:
+        logger.warning('receive less than 2-bytes')
         raise RuntimeError('frame header less than 2-bytes')
-
     # first bit is MASK flag
-    payload_length = transform.octet_to_number(octet_array[1][1:])
+    payload_length = packet.bits_to_integer(header.get_bits(1)[1:])
     # if 0-125, that is the payload length
     if payload_length <= 125:
         # if frame is client-to-server, payload length does not include mask-key(4-byte)
-        if octet_array[1][0] is 1:
+        if header.get_bits(1)[0] is 1:
             return payload_length + 6
         return payload_length + 2
     # If 126, the following 2 bytes interpreted as a
     # 16-bit unsigned integer are the payload length
     elif payload_length == 126:
         # Payload length field is in [2-4)bytes
-        if len(octet_array) < 4:
+        if len(header) < 4:
             raise exceptions.FrameHeaderParseError(
                 'payload length flag is 126, but header length is {}'.format(
-                    len(octet_array)))
-        if octet_array[1][0] is 1:
-            return transform.octet_to_number(
-                transform.flatten_list(octet_array[2:4])) + 8
-        return transform.octet_to_number(transform.flatten_list(octet_array[2:4])) + 4
+                    len(header)))
+        if header.get_bits(1)[0] is 1:
+            return packet.bits_to_integer(
+                generic.flatten_list(header.get_bits(2, 2))) + 8
+        return packet.bits_to_integer(
+            generic.flatten_list(header.get_bits(2, 2))) + 4
     # If 127, the following 8 bytes interpreted as a
     # 64-bit unsigned integer (the most significant bit
     # MUST be 0) are the payload length.
     elif payload_length == 127:
         # Payload length field is in [2-10)bytes
-        if len(octet_array) < 10:
+        if len(header) < 10:
             raise exceptions.FrameHeaderParseError(
                 'payload length flag is 127, but header length is {}'.format(
-                    len(octet_array)))
-        if octet_array[1][0] is 1:
-            return transform.octet_to_number(
-                transform.flatten_list(octet_array[2:4])) + 14
-        return transform.octet_to_number(transform.flatten_list(octet_array[2:4])) + 10
+                    len(header)))
+        if header.get_bits(1)[0] is 1:
+            return packet.bits_to_integer(
+                generic.flatten_list(header.get_bits(2, 2))) + 14
+        return packet.bits_to_integer(
+            generic.flatten_list(header.get_bits(2, 2))) + 10
     raise exceptions.FatalError('internal error')
 
 
@@ -227,10 +228,10 @@ class FrameBase(object, metaclass=abc.ABCMeta):
         0xF: b'Control Frame',
     }
 
-    def __init__(self, raw_frame_bit_array):
-        if len(raw_frame_bit_array) % 8 != 0:
-            raise RuntimeError('the raw frame bit array is invalid')
-        self._octet_array = transform.bit_array_to_octet_array(raw_frame_bit_array)
+    def __init__(self, byte_array):
+        if not isinstance(byte_array, packet.ByteArray):
+            raise RuntimeError('the byte array is invalid')
+        self._byte_array = byte_array
         # parse frame
         self.parse_octet()
 
@@ -242,11 +243,12 @@ class FrameBase(object, metaclass=abc.ABCMeta):
         # |N|V|V|V|       |
         # | |1|2|3|       |
         # +-+-+-+-+-------+
-        self._flag_fin = self._octet_array[0][0]
-        self._flag_rsv1 = self._octet_array[0][1]
-        self._flag_rsv2 = self._octet_array[0][2]
-        self._flag_rsv3 = self._octet_array[0][3]
-        self._flag_opcode = transform.octet_to_number(self._octet_array[0][4:])
+        self._flag_fin = self._byte_array.get_bit(0, 0)
+        self._flag_rsv1 = self._byte_array.get_bit(0, 1)
+        self._flag_rsv2 = self._byte_array.get_bit(0, 2)
+        self._flag_rsv3 = self._byte_array.get_bit(0, 3)
+        self._flag_opcode = packet.bits_to_integer(
+            self._byte_array.get_bits(0)[4:])
         # second byte(8-bits)
         # +-+-------------+
         # |M| Payload len |
@@ -254,81 +256,75 @@ class FrameBase(object, metaclass=abc.ABCMeta):
         # |S|             |
         # |K|             |
         # +-+-+-+-+-------+
-        self._flag_mask = self._octet_array[1][0]
-        self._flag_payload_length = transform.octet_to_number(
-            self._octet_array[1][1:])
+        self._flag_mask = self._byte_array.get_bit(1, 0)
+        self._flag_payload_length = packet.bits_to_integer(
+            self._byte_array.get_bits(1)[1:])
         self._payload_length = self._flag_payload_length
 
         _last_byte_index = 2
         if self._payload_length is 126:
             # If 126, the following 2 bytes interpreted as a
             # 16-bit unsigned integer are the payload length
-            self._payload_length = transform.octet_to_number(
-                transform.flatten_list(self._octet_array[_last_byte_index:4]))
+            self._payload_length = packet.bits_to_integer(
+                generic.flatten_list(
+                    self._byte_array.get_bits(_last_byte_index, 2)))
             _last_byte_index = 4
         elif self._payload_length is 127:
             # If 127, the following 8 bytes interpreted as a
             # 64-bit unsigned integer (the most significant bit
             # MUST be 0) are the payload length.
-            self._payload_length = transform.octet_to_number(
-                transform.flatten_list(self._octet_array[_last_byte_index:10]))
+            self._payload_length = packet.bits_to_integer(
+                generic.flatten_list(
+                    self._byte_array.get_bits(_last_byte_index, 8)))
             _last_byte_index = 10
 
         # Masking-key, if MASK set to 1
         if self._flag_mask is 1:
-            self._mask_key = transform.octet_to_number(
-                transform.flatten_list(
-                    self._octet_array[_last_byte_index:_last_byte_index + 4])
-            )
+            self._mask_key = packet.bits_to_integer(
+                generic.flatten_list(
+                    self._byte_array.get_bits(_last_byte_index, 4)))
             _last_byte_index += 4
         else:
             self._mask_key = False
 
         # Payload Data
-        self._payload_data = transform.octet_array_to_string(
-            self._octet_array[_last_byte_index:])
+        self._payload_data = self._byte_array.build(_last_byte_index)
         if self._flag_mask is 1:
             self._payload_data = ws_transform_payload_data(self._payload_data,
                                                            self._mask_key)
 
     def pack(self):
-        header_octet_array = []
+        frame = packet.Packet()
         # first-byte
-        header_octet_array.append((
+        frame.put_bits(
             self._flag_fin,  # FIN flag
             self._flag_rsv1,  # RSV1 flag
             self._flag_rsv2,  # RSV2 flag
             self._flag_rsv3,  # RSV3 flag
-            *transform.number_to_bit_array(self._flag_opcode)[::-1][4:]  # Opcode
-        ))
+            *packet.number_to_bits(self._flag_opcode, 4)
+        )
         # second-byte
-        header_octet_array.append((
-            self._flag_mask,  # Mask flag
-            *transform.number_to_bit_array(self._flag_payload_length)[::-1][1:]
-        # Payload length flag [ <125, 126, 127 ]
-        ))
+        frame.put_bits(
+            self._flag_mask,
+            # Payload length flag [ <125, 126, 127 ]
+            *packet.number_to_bits(self._flag_payload_length, 7)
+        )
         # payload_length
         if self._flag_payload_length is 126:
-            header_octet_array.extend(transform.bit_array_to_octet_array(
-                transform.number_to_bit_array(self._payload_length, 2), True),
-            )
+            frame.put_int16(self.payload_data_length)
         elif self._flag_payload_length is 127:
-            header_octet_array.extend(transform.bit_array_to_octet_array(
-                transform.number_to_bit_array(self._payload_length, 8), True)
-            )
+            frame.put_int64(self.payload_data_length)
         # Masking key
         if self._flag_mask is 1:
-            _masking_key = struct.pack('!I', self._mask_key)
-        else:
-            _masking_key = b''
+            frame.put_int32(self._mask_key)
         # Payload data
         if self._flag_mask is 1:
             _payload_data = ws_transform_payload_data(self._payload_data,
                                                       self._mask_key)
-            return transform.octet_array_to_string(
-                header_octet_array) + _masking_key + _payload_data
-        return transform.octet_array_to_string(
-            header_octet_array) + _masking_key + self._payload_data
+            frame.put_string(_payload_data)
+        else:
+            frame.put_string(self._payload_data)
+        return frame.build()
 
     @property
     def flag_fin(self):
@@ -373,7 +369,7 @@ class FrameBase(object, metaclass=abc.ABCMeta):
     def __str__(self):
         return '<WebSocket-Frame Fin={fin_flag} Type=\'{type}\' Payload_length={payload_length} Mask_key={mask_key}>'.format(
             fin_flag = self.flag_fin,
-            type = transform.to_string(self._global_frame_type[self.flag_opcode]),
+            type = generic.to_string(self._global_frame_type[self.flag_opcode]),
             payload_length = self._payload_length,
             mask_key = False if self._mask_key is False else hex(
                 self._mask_key).upper()
@@ -384,14 +380,14 @@ class FrameBase(object, metaclass=abc.ABCMeta):
 
 
 class WebSocketFrame(FrameBase):
-    def __init__(self, raw_websocket_data):
-        super(WebSocketFrame, self).__init__(transform.string_to_bit_array(
-            raw_websocket_data))
+    def __init__(self, raw_websocket):
+        super(WebSocketFrame, self).__init__(packet.ByteArray(raw_websocket))
 
 
 class FrameGenerator(FrameBase):
     def __init__(self):
-        super(FrameGenerator, self).__init__([0] * 16)  # 2-bytes
+        init_packet = packet.Packet(b'\x00\x00')
+        super(FrameGenerator, self).__init__(init_packet)
 
         # first-byte information
         self._flag_fin = 1
@@ -453,7 +449,7 @@ class FrameGenerator(FrameBase):
         return self
 
     def set_payload_data(self, contents):
-        self._payload_data = transform.to_bytes(contents)
+        self._payload_data = generic.to_bytes(contents)
         self._payload_length = len(self._payload_data)
         if self._payload_length < 126:
             self._flag_payload_length = self._payload_length
@@ -505,7 +501,7 @@ def generate_binary_frame_from_file(path_to_file, from_client=False):
 
 def generate_close_frame(from_client=False, extra_data=None, errno=1000):
     errno = struct.pack('!h', errno)
-    reason = transform.to_bytes('' if extra_data is None else extra_data)
+    reason = generic.to_bytes('' if extra_data is None else extra_data)
     return _build_base_frame(from_client, errno + reason).opcode(0x8)
 
 

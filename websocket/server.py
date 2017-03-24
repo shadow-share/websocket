@@ -296,6 +296,7 @@ class WebSocketServerBase(Deamon, metaclass = abc.ABCMeta):
             exit()
         except Exception as e:
             logger.error('Error occurs for {}'.format(repr(e)))
+            raise
 
 
     def _socket_ready_receive(self, socket_fd):

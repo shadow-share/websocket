@@ -4,7 +4,7 @@
 #
 import base64
 import hashlib
-from websocket.utils import transform
+from websocket.utils import generic
 
 # GUID String
 _const_guid_string = b'258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
@@ -17,7 +17,7 @@ _const_guid_string = b'258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
 #
 # base64-encode(SHA1(key + GUID))
 def ws_accept_key(key):
-    key = transform.to_bytes(key)
+    key = generic.to_bytes(key)
     hash_sha1 = hashlib.sha1(key + _const_guid_string)
     hash_sha1_rst = hash_sha1.digest()
 
@@ -29,7 +29,7 @@ def ws_accept_key(key):
 # base64-encoded. The nonce MUST be selected randomly for
 # each connection.
 def ws_generate_key():
-    random_16byte_string = transform.random_bytes_string(16)
+    random_16byte_string = generic.random_bytes_string(16)
     return base64.b64encode(random_16byte_string)
 
 
@@ -37,12 +37,12 @@ def ws_generate_key():
 # value that, when decoded, is 16 bytes in length.
 def ws_check_key_length(key):
     if isinstance(key, (str, bytes)):
-        return transform.base64_decode_length(key) is 16
+        return generic.base64_decode_length(key) is 16
     raise KeyError('the key must be str or bytes')
 
 # All frames sent from the client to the server are masked by a
 # 32-bit value that is contained within the frame.
 def ws_generate_frame_mask_key():
     # 0x00 - 0xFF = 1byte(8 bit)
-    return transform.random_bytes_string(4, start = 0x00, stop = 0xff)
+    return generic.random_bytes_string(4, start = 0x00, stop = 0xff)
 

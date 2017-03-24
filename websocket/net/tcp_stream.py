@@ -3,7 +3,7 @@
 # Copyright (C) 2017 ShadowMan
 #
 import socket
-from websocket.utils import transform
+from websocket.utils import generic
 
 class TCPStream(object):
 
@@ -20,7 +20,7 @@ class TCPStream(object):
 
 
     def find_buffer(self, sub_content):
-        sub_content = transform.to_bytes(sub_content)
+        sub_content = generic.to_bytes(sub_content)
         pos = self._receive_buffer.find(sub_content)
         if pos >= 0:
             pos += len(sub_content) + 1

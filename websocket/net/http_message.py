@@ -5,7 +5,7 @@
 import re
 import abc
 from collections import namedtuple, OrderedDict
-from websocket.utils import transform
+from websocket.utils import generic
 
 
 # Http version 1.1
@@ -62,8 +62,8 @@ class HttpMessage(object, metaclass = abc.ABCMeta):
 
         for k, v in filter(lambda el: isinstance(el, HttpField), header_fields):
             # HTTP headers are not case-sensitive
-            k = transform.to_bytes(k).lower()
-            self._header_fields[k] = HttpField(k, transform.to_bytes(v))
+            k = generic.to_bytes(k).lower()
+            self._header_fields[k] = HttpField(k, generic.to_bytes(v))
 
     @abc.abstractclassmethod
     def __str__(self):
@@ -74,16 +74,16 @@ class HttpMessage(object, metaclass = abc.ABCMeta):
         return RuntimeError('Derived class must be defined pack method')
 
     def __getitem__(self, item):
-        return self._header_fields.get(transform.to_bytes(item).lower(), None)
+        return self._header_fields.get(generic.to_bytes(item).lower(), None)
 
     def __setitem__(self, key, value):
-        self._header_fields[transform.to_bytes(key).lower()] = transform.to_bytes(value)
+        self._header_fields[generic.to_bytes(key).lower()] = generic.to_bytes(value)
 
     def __repr__(self):
         return '<{} Hello World>'.format(self.__class__.__str__())
 
     def __contains__(self, item):
-        return transform.to_bytes(item).lower() in self._header_fields
+        return generic.to_bytes(item).lower() in self._header_fields
 
     @property
     def http_version(self):
@@ -97,7 +97,7 @@ class HttpRequest(HttpMessage):
         super(HttpRequest, self).__init__(*header_field)
 
         if isinstance(request_method, (str, bytes)):
-            self._request_method = transform.to_bytes(request_method.upper())
+            self._request_method = generic.to_bytes(request_method.upper())
 
             if self._request_method not in HTTP_METHODS:
                 raise KeyError('the request method \'{}\' is invalid'.format(request_method))
@@ -106,7 +106,7 @@ class HttpRequest(HttpMessage):
 
         if not isinstance(request_resource, (str, bytes)):
             raise TypeError('request resource must be str or bytes type')
-        self._request_resource = transform.to_bytes(request_resource)
+        self._request_resource = generic.to_bytes(request_resource)
 
         if http_version not in (HTTP_VERSION_1_1, HTTP_VERSION_1_0):
             raise TypeError('http version invalid')
@@ -117,7 +117,7 @@ class HttpRequest(HttpMessage):
         else:
             if not isinstance(extra_data, (str, bytes)):
                 raise TypeError('extra data must be str or bytes type')
-            self._extra_data = transform.to_bytes(extra_data)
+            self._extra_data = generic.to_bytes(extra_data)
 
     def __str__(self):
         return '<HttpRequest method={method} resource={resource} version={version} fields-length={fields_length}>'.format(
@@ -179,7 +179,7 @@ class HttpResponse(HttpMessage):
                 raise TypeError('code description must be str or bytes type')
 
         if status_code in _response_status_description:
-            self._status_code = transform.to_bytes(str(status_code))
+            self._status_code = generic.to_bytes(str(status_code))
             self._description = _response_status_description[status_code] if description is None else description
         else:
             raise KeyError('must be provide code\'{}\' description'.format(status_code))
@@ -193,7 +193,7 @@ class HttpResponse(HttpMessage):
         else:
             if not isinstance(extra_data, (str, bytes)):
                 raise TypeError('extra data must be str or bytes type')
-            self._extra_data = transform.to_bytes(extra_data)
+            self._extra_data = generic.to_bytes(extra_data)
 
 
     def __str__(self):
@@ -242,7 +242,7 @@ class HttpResponse(HttpMessage):
 
 
 def is_http_protocol(raw_data):
-    lines = list(filter(lambda l: l, transform.to_string(raw_data).split('\r\n')))
+    lines = list(filter(lambda l: l, generic.to_string(raw_data).split('\r\n')))
 
     # request/response format
     if not re.match(r'(GET|POST|PUT|DELETE|UPDATE|HEAD) (.*) HTTP\/(1\.0|1\.1)$', lines[0], re.I):
@@ -267,12 +267,12 @@ def create_header_fields(*fields):
 
 
 def factory(raw_data):
-    header, payload_data = transform.to_string(raw_data).split('\r\n\r\n', 2)
+    header, payload_data = generic.to_string(raw_data).split('\r\n\r\n', 2)
 
     if not is_http_protocol(header):
         raise RuntimeError('the data Does not appear to be a valid HTTP data')
 
-    header_line = list(filter(lambda l: l, transform.to_string(header).split('\r\n')))
+    header_line = list(filter(lambda l: l, generic.to_string(header).split('\r\n')))
     first_line = header_line[0].split(' ', 3)
 
     header_fields = []

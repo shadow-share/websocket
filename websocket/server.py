@@ -127,15 +127,17 @@ import sys
 import atexit
 import signal
 import socket
+import functools
 import selectors
 from collections import deque, OrderedDict
-
 from websocket.utils import (
     exceptions, logger
 )
-from websocket.ext import handler
+from websocket.ext import handler, router
 from websocket.net import ws_frame
-from websocket.controller import plain_spliter
+from websocket.controller import (
+    base_controller, plain_controller
+)
 
 
 __all__ = [ 'create_websocket_server' ]
@@ -196,6 +198,7 @@ class Deamon(object):
         sys.stderr.flush()
         _stdin = open(self._stdin, 'r')
         _stdout = open(self._stdout, 'a')
+        # if require non-buffer, open mode muse be `b`
         _stderr = open(self._stderr, 'wb+', buffering = 0)
         os.dup2(_stdin.fileno(), sys.stdin.fileno())
         os.dup2(_stdout.fileno(), sys.stdout.fileno())
@@ -243,6 +246,11 @@ class WebSocketServerBase(Deamon, metaclass = abc.ABCMeta):
         self._handlers = None # type: tuple()
         # close frame information (from_endpoint, is receive/send close)
         self._close_information = dict()
+        # router object
+        self._router = router.Router()
+        # register default handler
+        self._router.register_default('controller',
+                                      plain_controller.PlainController)
 
 
     def set_handler(self, ws_handlers):
@@ -254,7 +262,45 @@ class WebSocketServerBase(Deamon, metaclass = abc.ABCMeta):
         self._handlers = ws_handlers.export()
 
 
-    def set_controller(self, controller:str):
+    def register_handler(self, namespace):
+        exceptions.raise_parameter_error('namespace', str, namespace)
+        def _decorator_wrapper(class_object):
+            # isinstance(class_object, handler.WebSocketHandlerProtocol) False
+            if handler.WebSocketHandlerProtocol not in class_object.__bases__:
+                raise exceptions.ParameterError(
+                    'handlers must be derived with WebSocketHandlerProtocol')
+            @functools.wraps(class_object)
+            def _handler_wrapper(*args, **kwargs):
+                logger.info('{} handler register on {}'.format(
+                    class_object.__name__, namespace))
+                self._router.register(namespace, 'handler',
+                                      class_object(*args, **kwargs))
+            return _handler_wrapper
+        return _decorator_wrapper
+
+
+    def register_default_handler(self, class_object):
+        if handler.WebSocketHandlerProtocol not in class_object.__bases__:
+            raise exceptions.ParameterError(
+                'handlers must be derived with WebSocketHandlerProtocol')
+        logger.info('Default handler registered for {}'.format(
+            class_object.__name__))
+        self._router.register_default('handler', class_object)
+        @functools.wraps(class_object)
+        def _handler_wrapper(*args, **kwargs):
+            return class_object(*args, **kwargs)
+        return _handler_wrapper
+
+
+    def register_controller(self, namespace, controller_name):
+        exceptions.raise_parameter_error('namespace', str, namespace)
+        if base_controller.BaseController not in controller_name.__bases__:
+            raise exceptions.ParameterError(
+                'handlers must be derived with WebSocketHandlerProtocol')
+        self._router.register(namespace, 'controller', controller_name)
+
+
+    def register_default_controller(self):
         pass
 
 
@@ -291,12 +337,31 @@ class WebSocketServerBase(Deamon, metaclass = abc.ABCMeta):
                     callback = key.data
                     callback(key.fileobj)
                 self._clean_write_queue()
-        except KeyboardInterrupt:  # when start debug mode check Ctrl-C
+        except KeyboardInterrupt:  # when start debug mode listen Ctrl-C
             logger.info('<Ctrl + C> Bye, Never BUG')
             exit()
         except Exception as e:
             logger.error('Error occurs for {}'.format(repr(e)))
             raise
+
+
+    def _accept_client(self, server_fd):
+        # accept new client
+        client_fd, client_address = server_fd.accept()
+        # set non=blocking
+        client_fd.setblocking(False)
+        # register listen EVENT_READ
+        self._selector.register(client_fd,
+                        selectors.EVENT_READ, self._socket_ready_receive)
+
+        # record close information
+        self._close_information[client_fd] = (None, False)
+        # write queue for single socket descriptor
+        self._write_queue[client_fd] = deque()  # type: deque
+        # Received data is an HTTP request
+        # TODO. accept http request need outside
+        self._client_list[client_fd] = plain_controller.PlainController(
+            client_fd, self._write_queue[client_fd].append, *self._handlers)
 
 
     def _socket_ready_receive(self, socket_fd):
@@ -351,24 +416,6 @@ class WebSocketServerBase(Deamon, metaclass = abc.ABCMeta):
                 self._close_client(socket_fd)
         except Exception:
             raise
-
-
-    def _accept_client(self, server_fd):
-        # accept new client
-        client_fd, client_address = server_fd.accept()
-        # set non=blocking
-        client_fd.setblocking(False)
-        # register listen EVENT_READ
-        self._selector.register(client_fd,
-                        selectors.EVENT_READ, self._socket_ready_receive)
-
-        # record close information
-        self._close_information[client_fd] = (None, False)
-        # write queue for single socket descriptor
-        self._write_queue[client_fd] = deque()  # type: deque
-        # Received data is an HTTP request
-        self._client_list[client_fd] = plain_spliter.PlainController(
-            client_fd, self._write_queue[client_fd].append, *self._handlers)
 
 
     def _close_client(self, socket_fd):

@@ -70,3 +70,4 @@ def flatten_list(array):
             else:
                 yield item
     return list(_flatten_generator(array))
+

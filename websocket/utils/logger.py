@@ -56,10 +56,10 @@ def init(level:str, console:bool = False, log_file:str = None):
         console.setLevel(logging.DEBUG)
         console.setFormatter(formatter)
         logging.getLogger('').addHandler(console)
-        _wait_logger_init_msg(warning, 'logger file handler is disable')
+        _wait_logger_init_msg(warning, 'Logger file handler is disable')
 
     if log_file is False and console is False:
-        raise exceptions.LoggerWarning('logger is turn off!')
+        raise exceptions.LoggerWarning('Logger is turn off!')
 
     for func, message in _wait_message_queue:
         if callable(func):

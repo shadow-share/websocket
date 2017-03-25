@@ -19,8 +19,6 @@ class BaseController(object, metaclass = abc.ABCMeta):
         self._tcp_stream = tcp_stream.TCPStream(socket_fd)
         # websocket event handler
         self._handlers = dict()
-        # initialize all event handler
-        self._init_handler(connect, message, close, error)
         # output package method
         if not callable(output):
             raise TypeError('output method must be callable')
@@ -49,7 +47,7 @@ class BaseController(object, metaclass = abc.ABCMeta):
         self._on_receive_ready()
 
 
-    def _init_handler(self, connect, message, close, error):
+    def init_handler(self, connect, message, close, error):
         for var_name, var_val in locals().items():
             if var_name != 'self' and not callable(var_val):
                 raise TypeError('{} handler must be callable'.format(var_name))
@@ -61,6 +59,7 @@ class BaseController(object, metaclass = abc.ABCMeta):
         if pos is -1:
             return
         http_request = http_message.factory(self._tcp_stream.feed_buffer(pos))
+        logger.debug('Request: {}'.format(repr(http_request)))
         # TODO. chunk header-field
         if 'Content-Length' in http_request:
             print('have any payload', http_request['Content-Length'].value)
@@ -152,3 +151,10 @@ class BaseController(object, metaclass = abc.ABCMeta):
     def _recv_pong(self, complete_frame):
         logger.debug('Client({}:{}) receive pong frame'.format(
             *self._socket_fd.getpeername()))
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type or exc_tb:
+            raise exc_val

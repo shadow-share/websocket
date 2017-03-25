@@ -41,15 +41,17 @@ HTTP_METHOD_UPDATE = b'UPDATE'
 HTTP_METHOD_HEAD = b'HEAD'
 
 
-class HttpField(namedtuple('HttpField', 'key value')):
+class HeaderField(namedtuple('HeaderField', 'key value')):
 
     def __str__(self):
-        return '<HttpField {} => {}>'.format(self.key, self.value)
+        return '<HttpField {} => {}>'.format(
+            generic.to_string(self.key), generic.to_string(self.value))
 
     def __repr__(self):
-        return '<HttpField {} => {}>'.format(self.key, self.value)
+        return '<HttpField {} => {}>'.format(
+            generic.to_string(self.key), generic.to_string(self.value))
 
-    def to_byte_string(self, crlf = True):
+    def to_byte_string(self):
         return self.key + b' '.join([b':', self.value]) + b'\r\n'
 
 
@@ -58,20 +60,20 @@ class HttpMessage(object, metaclass = abc.ABCMeta):
 
     def __init__(self, *header_fields):
         self._http_version = HTTP_VERSION_1_1
-        self._header_fields = OrderedDict()
+        self._header_fields = dict()
 
-        for k, v in filter(lambda el: isinstance(el, HttpField), header_fields):
+        for k, v in filter(lambda el: isinstance(el, HeaderField), header_fields):
             # HTTP headers are not case-sensitive
             k = generic.to_bytes(k).lower()
-            self._header_fields[k] = HttpField(k, generic.to_bytes(v))
+            self._header_fields[k] = HeaderField(k, generic.to_bytes(v))
 
     @abc.abstractclassmethod
     def __str__(self):
-        return RuntimeError('Derived class must be defined __str__ method')
+        pass
 
     @abc.abstractclassmethod
     def pack(self):
-        return RuntimeError('Derived class must be defined pack method')
+        pass
 
     def __getitem__(self, item):
         return self._header_fields.get(generic.to_bytes(item).lower(), None)
@@ -100,7 +102,8 @@ class HttpRequest(HttpMessage):
             self._request_method = generic.to_bytes(request_method.upper())
 
             if self._request_method not in HTTP_METHODS:
-                raise KeyError('the request method \'{}\' is invalid'.format(request_method))
+                raise KeyError('the request method \'{}\' is invalid'.format(
+                    request_method))
         else:
             raise TypeError('request method must be str or bytes type')
 
@@ -132,7 +135,8 @@ class HttpRequest(HttpMessage):
 
         # first-line
         # FORMAT: [Method] [Resource] [Version]\r\n
-        bytes_string_rst += b' '.join([ self._request_method, self._request_resource, self._http_version ])
+        bytes_string_rst += b' '.join(
+            [self._request_method, self._request_resource, self._http_version])
         bytes_string_rst += b'\r\n'
 
         # header-field
@@ -166,7 +170,9 @@ class HttpRequest(HttpMessage):
 
 class HttpResponse(HttpMessage):
 
-    def __init__(self, status_code, *header_field, http_version = HTTP_VERSION_1_1, description = None, extra_data = None):
+    def __init__(self, status_code, *header_field,
+                 http_version = HTTP_VERSION_1_1,
+                 description = None, extra_data = None):
         super(HttpResponse, self).__init__(*header_field)
 
         if isinstance(status_code, (str, bytes)):
@@ -186,7 +192,7 @@ class HttpResponse(HttpMessage):
 
         if http_version not in (HTTP_VERSION_1_1, HTTP_VERSION_1_0):
             raise TypeError('http version invalid')
-        self._http_version = b'HTTP/1.1' if http_version == HTTP_VERSION_1_1 else b'HTTP/1.0'
+        self._http_version = http_version
 
         if extra_data is None:
             self._extra_data = b''
@@ -259,11 +265,11 @@ def is_http_protocol(raw_data):
 
 
 def create_header_field(key, value):
-    return HttpField(key, value)
+    return HeaderField(key, value)
 
 
 def create_header_fields(*fields):
-    return [ HttpField(*field) for field in fields ]
+    return [HeaderField(*field) for field in fields]
 
 
 def factory(raw_data):
@@ -278,7 +284,7 @@ def factory(raw_data):
     header_fields = []
     for line in header_line[1:]:
         k, v = line.split(':', 1)
-        header_fields.append(HttpField(k.strip(), v.strip()))
+        header_fields.append(HeaderField(k.strip(), v.strip()))
 
     if re.match(r'(GET|POST|PUT|DELETE|UPDATE|HEAD)', first_line[0]):
         method = first_line[0].strip().upper()

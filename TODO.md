@@ -31,7 +31,14 @@ TODO list for websocket develop
         
     * SECRET from user input
     
-    
+ 
+ * fragment frame
+ 
+    eg. fragment-1: FIN = 0, opcode = 1
+        fragment-2: FIN = 0, opcode = 0
+        fragment-3: FIN = 1, opcode = 0 
+   
+   
 ### Module
 
  * Router Module
@@ -77,5 +84,4 @@ TODO list for websocket develop
         
         def __init__(self):
             pass
-        
     ```

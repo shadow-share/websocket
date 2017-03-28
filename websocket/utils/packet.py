@@ -55,7 +55,8 @@ class ByteArray(object):
     def __init__(self, raw_data):
         if raw_data is None:
             self.size = 0
-            self.elements = list() # deque is not support slice
+            # deque is not support slice
+            self.elements = list()  # type: list
         elif isinstance(raw_data, int):
             self._factory_from_int(raw_data)
         elif isinstance(raw_data, bytes):

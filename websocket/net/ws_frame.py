@@ -131,7 +131,7 @@ from websocket.utils import (
 )
 
 def ws_transform_payload_data(data, mask_key):
-    if not isinstance(mask_key, (int)):
+    if not isinstance(mask_key, int):
         # from string transition to int
         if isinstance(mask_key, str):
             mask_key = int(mask_key, 16)
@@ -153,7 +153,7 @@ def ws_transform_payload_data(data, mask_key):
     transformed_string = b''
     for index, value in enumerate(generic.to_bytes(data)):
         transformed_string += struct.pack('!B', (
-        value ^ mask_key_octet[index % 4]) & 0xff)
+            value ^ mask_key_octet[index % 4]) & 0xff)
     return transformed_string
 
 
@@ -168,7 +168,7 @@ def parse_frame_length(frame_header):
     payload_length = packet.bits_to_integer(header.get_bits(1)[1:])
     # if 0-125, that is the payload length
     if payload_length <= 125:
-        # if frame is client-to-server, payload length does not include mask-key(4-byte)
+        # if frame is client-to-server, payload length does not include mask-key
         if header.get_bits(1)[0] is 1:
             return payload_length + 6
         return payload_length + 2

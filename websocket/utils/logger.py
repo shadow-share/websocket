@@ -6,7 +6,7 @@ import logging
 from websocket.utils import exceptions
 
 
-__all__ = [ 'init', 'info', 'warning', 'error', 'debug' ]
+__all__ = ['init', 'info', 'warning', 'error', 'debug']
 
 
 def _logger_level(level):
@@ -20,23 +20,25 @@ def _logger_level(level):
     elif level == 'ERROR':
         return logging.ERROR
     else:
-        raise TypeError("Invalid logging level '{level}'".format(level = level))
+        raise TypeError("Invalid logging level '{level}'".format(level=level))
+
+_wait_message_queue = []  # type: list
 
 
-_wait_message_queue = [] # type: list
-def _wait_logger_init_msg(func, message:str):
+def wait_logger_init_msg(func, message: str):
     _wait_message_queue.append((func, message))
 
 
-def init(level:str, console:bool = False, log_file:str = None):
+def init(level: str, console: bool=False, log_file: str=None):
     if isinstance(level, str):
         level = _logger_level(level)
     if console is True:
         level = logging.DEBUG
-    logging.basicConfig(level = level, format = '')
+    logging.basicConfig(level=level, format='')
 
     logger = logging.getLogger()
-    if len(logger.handlers):
+    logger.setLevel(level)
+    while len(logger.handlers):
         logger.removeHandler(logger.handlers[0])
 
     formatter = logging.Formatter('%(asctime)-12s: %(levelname)-8s %(message)s',
@@ -56,7 +58,7 @@ def init(level:str, console:bool = False, log_file:str = None):
         console.setLevel(logging.DEBUG)
         console.setFormatter(formatter)
         logging.getLogger('').addHandler(console)
-        _wait_logger_init_msg(warning, 'Logger file handler is disable')
+        wait_logger_init_msg(warning, 'Logger file handler is disable')
 
     if log_file is False and console is False:
         raise exceptions.LoggerWarning('Logger is turn off!')
@@ -80,6 +82,7 @@ def warning(message):
 
 def error(message):
     logging.error(message)
+
 
 def error_exit(message):
     error(message)

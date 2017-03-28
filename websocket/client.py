@@ -90,10 +90,24 @@
 # not present in the client's handshake (the server has indicated a
 # subprotocol not requested by the client), the client MUST _Fail
 # the WebSocket Connection_.
-
+import contextlib
 
 class WebSocketClient(object):
 
     def __init__(self):
         pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type and exc_tb:
+            raise exc_val
+
+    @contextlib.contextmanager
+    def cursor(self):
+        pass
+
+def create_websocket_client(host, port, debug=False):
+    pass
 

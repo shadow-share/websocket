@@ -20,6 +20,7 @@ class PythonVersionError(Exception):
 if sys.version_info[0] < 3:
     raise PythonVersionError('websocket module only run under the python3+')
 
+
 # import create server method
 from websocket.server import *
 # import logger

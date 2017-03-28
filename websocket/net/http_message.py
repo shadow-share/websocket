@@ -4,7 +4,7 @@
 #
 import re
 import abc
-from collections import namedtuple, OrderedDict
+from collections import namedtuple
 from websocket.utils import generic
 
 
@@ -56,13 +56,14 @@ class HeaderField(namedtuple('HeaderField', 'key value')):
 
 
 # Http message base class
-class HttpMessage(object, metaclass = abc.ABCMeta):
+class HttpMessage(object, metaclass=abc.ABCMeta):
 
     def __init__(self, *header_fields):
         self._http_version = HTTP_VERSION_1_1
         self._header_fields = dict()
 
-        for k, v in filter(lambda el: isinstance(el, HeaderField), header_fields):
+        for k, v in filter(lambda el: isinstance(el, HeaderField),
+                           header_fields):
             # HTTP headers are not case-sensitive
             k = generic.to_bytes(k).lower()
             self._header_fields[k] = HeaderField(k, generic.to_bytes(v))
@@ -79,10 +80,11 @@ class HttpMessage(object, metaclass = abc.ABCMeta):
         return self._header_fields.get(generic.to_bytes(item).lower(), None)
 
     def __setitem__(self, key, value):
-        self._header_fields[generic.to_bytes(key).lower()] = generic.to_bytes(value)
+        self._header_fields[generic.to_bytes(key).lower()] = \
+            generic.to_bytes(value)
 
     def __repr__(self):
-        return '<{} Hello World>'.format(self.__class__.__str__())
+        return self.__str__()
 
     def __contains__(self, item):
         return generic.to_bytes(item).lower() in self._header_fields
@@ -95,7 +97,7 @@ class HttpMessage(object, metaclass = abc.ABCMeta):
 class HttpRequest(HttpMessage):
 
     def __init__(self, request_method, request_resource, *header_field,
-                 http_version = HTTP_VERSION_1_1, extra_data = None):
+                 http_version=HTTP_VERSION_1_1, extra_data=None):
         super(HttpRequest, self).__init__(*header_field)
 
         if isinstance(request_method, (str, bytes)):
@@ -113,7 +115,8 @@ class HttpRequest(HttpMessage):
 
         if http_version not in (HTTP_VERSION_1_1, HTTP_VERSION_1_0):
             raise TypeError('http version invalid')
-        self._http_version = b'HTTP/1.1' if http_version == HTTP_VERSION_1_1 else b'HTTP/1.0'
+        self._http_version = \
+            b'HTTP/1.1' if http_version == HTTP_VERSION_1_1 else b'HTTP/1.0'
 
         if extra_data is None:
             self._extra_data = b''
@@ -123,11 +126,13 @@ class HttpRequest(HttpMessage):
             self._extra_data = generic.to_bytes(extra_data)
 
     def __str__(self):
-        return '<HttpRequest method={method} resource={resource} version={version} fields-length={fields_length}>'.format(
-            method = self._request_method,
-            resource = self._request_resource,
-            version = self._http_version,
-            fields_length = len(self._header_fields)
+        format_string = '<HttpRequest method={method} resource={resource}' + \
+                        ' version={version} fields-length={fields_length}>'
+        return format_string.format(
+            method=self._request_method,
+            resource=self._request_resource,
+            version=self._http_version,
+            fields_length=len(self._header_fields)
         )
 
     def pack(self):
@@ -171,8 +176,8 @@ class HttpRequest(HttpMessage):
 class HttpResponse(HttpMessage):
 
     def __init__(self, status_code, *header_field,
-                 http_version = HTTP_VERSION_1_1,
-                 description = None, extra_data = None):
+                 http_version=HTTP_VERSION_1_1,
+                 description=None, extra_data=None):
         super(HttpResponse, self).__init__(*header_field)
 
         if isinstance(status_code, (str, bytes)):
@@ -186,9 +191,13 @@ class HttpResponse(HttpMessage):
 
         if status_code in _response_status_description:
             self._status_code = generic.to_bytes(str(status_code))
-            self._description = _response_status_description[status_code] if description is None else description
+            if description is None:
+                self._description = _response_status_description[status_code]
+            else:
+                self._description = description
         else:
-            raise KeyError('must be provide code\'{}\' description'.format(status_code))
+            raise KeyError('must be provide code\'{}\' description'.format(
+                status_code))
 
         if http_version not in (HTTP_VERSION_1_1, HTTP_VERSION_1_0):
             raise TypeError('http version invalid')
@@ -201,13 +210,14 @@ class HttpResponse(HttpMessage):
                 raise TypeError('extra data must be str or bytes type')
             self._extra_data = generic.to_bytes(extra_data)
 
-
     def __str__(self):
-        return '<HttpResponse code={code} description={description} version={version} fields-length={fields_length}>'.format(
-            code = self._status_code,
-            description = self._description,
-            version = self._http_version,
-            fields_length = len(self._header_fields)
+        format_string = '<HttpResponse code={code} description={description}' +\
+            ' version={version} fields-length={fields_length}>'
+        return format_string.format(
+            code=self._status_code,
+            description=self._description,
+            version=self._http_version,
+            fields_length=len(self._header_fields)
         )
 
     def pack(self):
@@ -215,7 +225,8 @@ class HttpResponse(HttpMessage):
 
         # first-line
         # FORMAT: [Version] [Code] [Description]\r\n
-        bytes_string_rst += b' '.join([ self._http_version, self._status_code, self._description ])
+        bytes_string_rst += b' '.join(
+            [self._http_version, self._status_code, self._description])
         bytes_string_rst += b'\r\n'
 
         # header-field
@@ -251,8 +262,11 @@ def is_http_protocol(raw_data):
     lines = list(filter(lambda l: l, generic.to_string(raw_data).split('\r\n')))
 
     # request/response format
-    if not re.match(r'(GET|POST|PUT|DELETE|UPDATE|HEAD) (.*) HTTP\/(1\.0|1\.1)$', lines[0], re.I):
-        if not re.match(r'HTTP\/(1\.0|1\.1) ([\d]+) ([\w\s]+)$', lines[0], re.I):
+    if not re.match(
+            r'(GET|POST|PUT|DELETE|UPDATE|HEAD) (.*) HTTP/(1\.0|1\.1)$',
+            lines[0], re.I):
+        if not re.match(
+                r'HTTP/(1\.0|1\.1) ([\d]+) ([\w\s]+)$', lines[0], re.I):
             return False
 
     # header-fields
@@ -278,7 +292,8 @@ def factory(raw_data):
     if not is_http_protocol(header):
         raise RuntimeError('the data Does not appear to be a valid HTTP data')
 
-    header_line = list(filter(lambda l: l, generic.to_string(header).split('\r\n')))
+    header_line = list(filter(
+        lambda l: l, generic.to_string(header).split('\r\n')))
     first_line = header_line[0].split(' ', 3)
 
     header_fields = []
@@ -292,8 +307,8 @@ def factory(raw_data):
         version = first_line[2].strip().upper()
 
         return HttpRequest(method, resource, *header_fields,
-                           http_version = _version_check(version),
-                           extra_data = payload_data)
+                           http_version=_version_check(version),
+                           extra_data=payload_data)
     else:
         # Response Frame
         version = first_line[0].strip().upper()
@@ -301,9 +316,10 @@ def factory(raw_data):
         description = first_line[2].strip()
 
         return HttpResponse(int(code), *header_fields,
-                            http_version = _version_check(version),
-                            description = description,
-                            extra_data = payload_data)
+                            http_version=_version_check(version),
+                            description=description,
+                            extra_data=payload_data)
+
 
 def _version_check(version_string):
     if version_string == 'HTTP/1.1':

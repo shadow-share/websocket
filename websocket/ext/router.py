@@ -17,7 +17,6 @@ class Router(object):
     def register_default(self, key, value):
         exceptions.raise_parameter_error('key', str, key)
         self._default_dict[key] = value
-        logger.info('Register default {} => {}'.format(key, str(value)))
 
     def unregister_default(self, key):
         exceptions.raise_parameter_error('key', str, key)
@@ -53,7 +52,7 @@ class Router(object):
         else:
             if key in self._default_dict:
                 return self._default_dict[key]
-            raise exceptions.ParameterError('url not found in router')
+        raise exceptions.ParameterError('url or key not found in router')
 
     @staticmethod
     def _parse_url(url: str):

@@ -41,8 +41,16 @@ class ParameterError(Exception):
 
 def raise_parameter_error(name, except_type, got_val):
     if not isinstance(got_val, except_type):
-        raise ParameterError('{name} except {except_type}, got {got_type}'.format(
-            name = name,
-            except_type = except_type.__name__,
-            got_type = type(got_val).__name__
-        ))
+        raise ParameterError(
+            '{name} except {except_type}, got {got_type}'.format(
+                name=name,
+                except_type=except_type.__name__,
+                got_type=type(got_val).__name__))
+
+
+class ExitWrite(Exception):
+    pass
+
+
+class BroadcastError(Exception):
+    pass

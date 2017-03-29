@@ -125,6 +125,7 @@ import sys
 import atexit
 import signal
 import socket
+import inspect
 import functools
 import selectors
 from collections import deque, OrderedDict
@@ -138,6 +139,7 @@ from websocket.net import (
 from websocket.controller import (
     base_controller, plain_controller
 )
+from websocket.controller.base_controller import BaseController
 
 
 __all__ = ['create_websocket_server']
@@ -213,13 +215,13 @@ class Daemon(object):
         logger.info('Daemon has been started')
 
     def _signal_handler(self, signum, frame):
-        logger.info('Deamon receive an exit signal({}: {})'.format(
+        logger.info('Daemon receive an exit signal({}: {})'.format(
             signum, frame))
         self._remove_pid_file()
         exit()
 
     def _remove_pid_file(self):
-        logger.info('Deamon has exited')
+        logger.info('Daemon has exited')
         if os.path.exists(self._pid_file):
             os.remove(self._pid_file)
 
@@ -229,16 +231,26 @@ class WebSocketServerBase(Daemon, metaclass=abc.ABCMeta):
     # max listen queue size
     LISTEN_SIZE = 16
 
-    def __init__(self, host, port, *, pid_file=None, debug=False):
+    def __init__(self, host: str, port: int, *, pid_file=None, debug=False):
+        ''' WebSocketServerBase members 
+        
+        :param host: str
+        :param port: int
+        :param pid_file: str
+        :param debug: bool
+        :type self._server_fd: list[socket.socket]
+        :type self._client_list: dict[str, dict[socket.socket, BaseController]]
+        :type self._server_address: tuple
+        '''
         # start deamon
         super(WebSocketServerBase, self).__init__(pid_file=pid_file,
                                                   debug=debug)
         # server file descriptor
         self._server_fd = None  # type: socket.socket
         # all handshake client
-        self._client_list = {}  # type: dict()
+        self._client_list = {'default': {}}
         # Server address information
-        self._server_address = (host, port)  # type: tuple
+        self._server_address = (host, port)
         # Write queue
         self._write_queue = OrderedDict()
         # close frame information (from_endpoint, is receive/send close)
@@ -258,6 +270,10 @@ class WebSocketServerBase(Daemon, metaclass=abc.ABCMeta):
                 raise exceptions.ParameterError(
                     'handlers must be derived with WebSocketHandlerProtocol')
             self._router.register(namespace, 'handler', class_object)
+            class_object.__namespace__ = namespace
+            logger.info('Handler => {}, registered to namespace => {}'.format(
+                class_object, namespace
+            ))
 
             @functools.wraps(class_object)
             def _handler_wrapper(*args, **kwargs):
@@ -271,8 +287,8 @@ class WebSocketServerBase(Daemon, metaclass=abc.ABCMeta):
         if handler.WebSocketHandlerProtocol not in class_object.__bases__:
             raise exceptions.ParameterError(
                 'handlers must be derived with WebSocketHandlerProtocol')
-        logger.info('Default handler registered for {}'.format(
-            class_object.__name__))
+        logger.info('Default handler registered => {}'.format(
+            class_object))
         self._router.register_default('handler', class_object)
 
         @functools.wraps(class_object)
@@ -286,6 +302,9 @@ class WebSocketServerBase(Daemon, metaclass=abc.ABCMeta):
             raise exceptions.ParameterError(
                 'handlers must be derived with WebSocketHandlerProtocol')
         self._router.register(namespace, 'controller', controller_name)
+        logger.info('controller => {}, registered to namespace => {}'.format(
+            controller_name, namespace
+        ))
 
     def register_default_controller(self, controller_name):
         if base_controller.BaseController not in controller_name.__bases__:
@@ -313,7 +332,8 @@ class WebSocketServerBase(Daemon, metaclass=abc.ABCMeta):
     def _select_loop(self):
         self._selector = selectors.DefaultSelector()
         self._selector.register(self._server_fd,
-                                selectors.EVENT_READ, self._accept_client)
+                                selectors.EVENT_READ,
+                                (self._accept_client, None))
 
         try:
             while True:
@@ -321,14 +341,20 @@ class WebSocketServerBase(Daemon, metaclass=abc.ABCMeta):
 
                 for key, mask in events:
                     # accept new client
-                    callback = key.data
-                    callback(key.fileobj)
+                    callback, namespace = key.data
+                    try:
+                        if namespace is None:
+                            callback(key.fileobj)
+                        else:
+                            callback(key.fileobj, namespace)
+                    except exceptions.ExitWrite:
+                        pass
                 self._clean_write_queue()
         except KeyboardInterrupt:  # when start debug mode listen Ctrl-C
             logger.info('<Ctrl + C> Bye, Never BUG')
             exit()
         except Exception as e:
-            logger.error('Error occurs for {}'.format(repr(e)))
+            logger.error('Fatal Error occurs for {}'.format(repr(e)))
             raise
 
     def _accept_client(self, server_fd):
@@ -342,20 +368,19 @@ class WebSocketServerBase(Daemon, metaclass=abc.ABCMeta):
         # register listen EVENT_READ
         self._selector.register(client_fd,
                                 selectors.EVENT_READ,
-                                self._accept_http_handshake)
+                                (self._accept_http_handshake, None))
 
         # record close information
         self._close_information[client_fd] = (None, False)
         # write queue for single socket descriptor
         self._write_queue[client_fd] = deque()  # type: deque
         # Received data is an HTTP request
-        self._client_list[client_fd] = tcp_stream.TCPStream(client_fd)
-        # TODO. accept http request need outside
-        # self._client_list[client_fd] = plain_controller.PlainController(
-        #     client_fd, self._write_queue[client_fd].append, *self._handlers)
+        self._client_list['default'][client_fd] = \
+            tcp_stream.TCPStream(client_fd)
 
     def _accept_http_handshake(self, socket_fd):
-        _tcp_stream = self._client_list[socket_fd]  # type: tcp_stream.TCPStream
+        _tcp_stream = \
+            self._client_list['default'][socket_fd]  # type:tcp_stream.TCPStream
         # receive data from kernel tcp buffer
         _tcp_stream.ready_receive()
         pos = _tcp_stream.find_buffer(b'\r\n\r\n')
@@ -378,21 +403,35 @@ class WebSocketServerBase(Daemon, metaclass=abc.ABCMeta):
                 (b'Sec-WebSocket-Accept', ws_utils.ws_accept_key(ws_key.value))
             )
         )
-        _handler = self._router.solution(
-            generic.to_string(http_request.resource), 'handler')()
-        _handler.on_connect(socket_fd.getpeername())
-        self._write_queue[socket_fd].append(http_response)
-        controller_name = self._router.solution(
-            generic.to_string(http_request.resource), 'controller')
-        self._client_list[socket_fd] = controller_name(
-            self._client_list[socket_fd], self._write_queue[socket_fd].append,
-            _handler)
-        self._selector.modify(socket_fd, selectors.EVENT_READ,
-                              self._socket_ready_receive)
-
-    def _socket_ready_receive(self, socket_fd):
         try:
-            self._client_list[socket_fd].ready_receive()
+            namespace = generic.to_string(http_request.resource)
+            # get handler or default handler
+            _handler = self._router.solution(namespace, 'handler')(socket_fd)
+            # notification handler connect event
+            _handler.on_connect(socket_fd.getpeername())
+            # send http-handshake-response
+            self._write_queue[socket_fd].append(http_response)
+            # get controller or default controller
+            controller_name = self._router.solution(namespace, 'controller')
+            # initial controller
+            if namespace not in self._client_list:
+                self._client_list[namespace] = dict()
+            self._client_list[namespace][socket_fd] = controller_name(
+                self._client_list['default'].pop(socket_fd),
+                self._write_queue[socket_fd].append,
+                _handler)
+            # modify selector data
+            self._selector.modify(socket_fd,
+                                  selectors.EVENT_READ,
+                                  (self._socket_ready_receive, namespace))
+        except exceptions.ParameterError:
+            raise exceptions.FatalError('handler not found')
+
+    def _socket_ready_receive(self, socket_fd, namespace):
+        try:
+            controller = \
+                self._client_list[namespace][socket_fd]  # type: BaseController
+            controller.ready_receive()
         except exceptions.ConnectClosed as e:
             # from server close
             if self._close_information[socket_fd][0] is None:
@@ -403,7 +442,7 @@ class WebSocketServerBase(Daemon, metaclass=abc.ABCMeta):
             else:
                 self._close_information[socket_fd] = \
                             (self._close_information[socket_fd][0], True)
-                self._close_client(socket_fd)
+                self._close_client(socket_fd, namespace)
 
             if e.args[0][0] != 1000:
                 logger.info('Server active close-frame, reason({})'.format(
@@ -413,14 +452,21 @@ class WebSocketServerBase(Daemon, metaclass=abc.ABCMeta):
                 extra_data=e.args[0][1], errno=e.args[0][0]))
 
     def _clean_write_queue(self):
-        _clients = list(self._client_list.keys())
-        for write_fd in _clients:
-            while len(self._write_queue[write_fd]):
-                # first call ChildClass::_send_frame
-                self._socket_ready_write(write_fd,
-                                         self._write_queue[write_fd].popleft())
+        _clients = dict()
+        for namespace in self._client_list:
+            for socket_fd in self._client_list[namespace].keys():
+                _clients[socket_fd] = namespace
+        for socket_fd, namespace in _clients.items():
+            while len(self._write_queue[socket_fd]):
+                try:
+                    self._socket_ready_write(socket_fd,
+                                             self._write_queue[socket_fd].pop(),
+                                             namespace)
+                except exceptions.ExitWrite:
+                    break
 
-    def _socket_ready_write(self, socket_fd, data_pack: ws_frame.FrameBase):
+    def _socket_ready_write(self, socket_fd, data_pack: ws_frame.FrameBase,
+                            namespace: str):
         try:
             if isinstance(data_pack, ws_frame.FrameBase) and \
                             data_pack.frame_type == ws_frame.Close_Frame:
@@ -436,18 +482,20 @@ class WebSocketServerBase(Daemon, metaclass=abc.ABCMeta):
             else:
                 raise exceptions.SendDataPackError('data pack invalid')
             if self._close_information[socket_fd][1] is True:
-                self._close_client(socket_fd)
+                self._close_client(socket_fd, namespace)
         except Exception:
             raise
 
-    def _close_client(self, socket_fd):
+    def _close_client(self, socket_fd, namespace):
         logger.debug('Client({}:{}) socket fd closed'.format(
             *socket_fd.getpeername()))
 
         self._selector.unregister(socket_fd)
-        self._client_list.pop(socket_fd)
+        self._client_list[namespace].pop(socket_fd)
+        self._write_queue.pop(socket_fd)
         self._close_information.pop(socket_fd)
         socket_fd.close()
+        raise exceptions.ExitWrite()
 
 
 class WebSocketServer(WebSocketServerBase):
@@ -462,14 +510,36 @@ class WebSocketServer(WebSocketServerBase):
         super(WebSocketServer, self).__init__(host, port, debug=self._debug)
 
     # On receive frame called.
-    def _socket_ready_receive(self, socket_fd):
+    def _socket_ready_receive(self, socket_fd, namespace):
         # other operate
-        super(WebSocketServer, self)._socket_ready_receive(socket_fd)
+        super(WebSocketServer, self)._socket_ready_receive(socket_fd, namespace)
 
     # Send frame process
-    def _socket_ready_write(self, socket_fd, data_pack: ws_frame.FrameBase):
+    def _socket_ready_write(self, socket_fd, data_pack: ws_frame.FrameBase,
+                            namespace: str):
         # other operate
-        super(WebSocketServer, self)._socket_ready_write(socket_fd, data_pack)
+        super(WebSocketServer, self)._socket_ready_write(socket_fd, data_pack,
+                                                         namespace)
+
+    def broadcast(self, message):
+        prev_locals = inspect.stack()[1][0].f_locals
+        if 'self' in prev_locals:
+            _self_class = prev_locals['self']
+            if not hasattr(_self_class, '__namespace__'):
+                raise exceptions.BroadcastError('broadcast context invalid')
+            namespace = _self_class.__namespace__
+            if namespace not in self._client_list:
+                raise exceptions.FatalError('Fatal error occurs, please report')
+            _context_socket_fd = _self_class._socket_fd
+            for socket_fd in self._client_list[namespace]:
+                if socket_fd == _context_socket_fd:
+                    continue
+                if hasattr(message, 'pack'):
+                    self._write_queue[socket_fd].append(message)
+                elif hasattr(message, 'generate_frame'):
+                    self._write_queue[socket_fd].append(message.generate_frame)
+                else:
+                    raise exceptions.BroadcastError('broadcast message invalid')
 
     @property
     def is_debug(self):

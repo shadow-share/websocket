@@ -41,16 +41,6 @@ TODO list for websocket develop
    
 ### Module
 
- * Router Module
-    ```python
-    @add_url_rule('/chat')
-    class ChatHandler(WebsocketHandlerProtocol):
-        
-        def __init__(self):
-            pass
-        
-    ```
-
  * Protocols Module
 
     ```python

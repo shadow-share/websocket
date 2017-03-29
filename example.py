@@ -12,9 +12,9 @@ ws_server = websocket.create_websocket_server('0.0.0.0', port=8999,
 
 @ws_server.register_default_handler
 class IndexHandler(handler.WebSocketHandlerProtocol):
-    def __init__(self):
+    def __init__(self, socket_fd):
         self._socket_name = None
-        handler.WebSocketHandlerProtocol.__init__(self)
+        handler.WebSocketHandlerProtocol.__init__(self, socket_fd)
 
     def on_connect(self, socket_name):
         self._socket_name = socket_name
@@ -37,11 +37,12 @@ class IndexHandler(handler.WebSocketHandlerProtocol):
             *self._socket_name
         ))
 
+
 @ws_server.register_handler('/chat')
 class ChatHandler(handler.WebSocketHandlerProtocol):
-    def __init__(self):
-        self._socket_name = None
-        handler.WebSocketHandlerProtocol.__init__(self)
+    def __init__(self, socket_fd):
+        self._socket_name = None  # type: tuple
+        handler.WebSocketHandlerProtocol.__init__(self, socket_fd)
 
     def on_connect(self, socket_name):
         self._socket_name = socket_name
@@ -50,7 +51,8 @@ class ChatHandler(handler.WebSocketHandlerProtocol):
     def on_message(self, message):
         websocket.logger.info('client({}:{}) receive message `{}`'.format(
             *self._socket_name, message.decode('utf-8')))
-        return websocket.TextMessage(message)
+        ws_server.broadcast(websocket.TextMessage(message))
+        return None
 
     def on_close(self, code, reason):
         websocket.logger.info('client({}:{}) closed {}:{}'.format(

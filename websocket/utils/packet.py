@@ -6,22 +6,23 @@ import ctypes
 import struct
 from websocket.utils import generic, exceptions
 
-'''c
-typedef union {
-    struct {
-        unsigned b0 : 1;
-        unsigned b1 : 1;
-        unsigned b2 : 1;
-        unsigned b3 : 1;
-        unsigned b4 : 1;
-        unsigned b5 : 1;
-        unsigned b6 : 1;
-        unsigned b7 : 1;
-    } _Bits;
-    unsigned char value;
-} Byte;
-'''
+
 class Byte(ctypes.Union):
+    """c
+    typedef union {
+        struct {
+            unsigned b0 : 1;
+            unsigned b1 : 1;
+            unsigned b2 : 1;
+            unsigned b3 : 1;
+            unsigned b4 : 1;
+            unsigned b5 : 1;
+            unsigned b6 : 1;
+            unsigned b7 : 1;
+        } _Bits;
+        unsigned char value;
+    } Byte;
+    """
 
     class _Bits(ctypes.Structure):
 
@@ -47,16 +48,16 @@ class Byte(ctypes.Union):
 
 
 class ByteArray(object):
-    '''
+    """
     :type raw_data: int | bytes | str | None
     :type size: int
-    :type elements: deque
-    '''
+    :type self.elements: list[Byte]
+    """
     def __init__(self, raw_data):
         if raw_data is None:
             self.size = 0
             # deque is not support slice
-            self.elements = list()  # type: list
+            self.elements = list()
         elif isinstance(raw_data, int):
             self._factory_from_int(raw_data)
         elif isinstance(raw_data, bytes):
@@ -71,13 +72,16 @@ class ByteArray(object):
         if len(hex_string) % 2:
             hex_string = '0' + hex_string
         self.size = int(len(hex_string) / 2)
-        self.elements = list(list(
-            map(lambda el: Byte(el), [
-                int(hex_string[index:index + 2], 16)
-                    for index in range(0, len(hex_string), 2)
-                ]
+        self.elements = list(
+            list(
+                map(
+                    lambda el: Byte(el), [
+                        int(hex_string[index:index + 2], 16)
+                        for index in range(0, len(hex_string), 2)
+                    ]
+                )
             )
-        ))
+        )
 
     def _factory_from_bytes(self, raw_data):
         self.size = len(raw_data)
@@ -87,7 +91,7 @@ class ByteArray(object):
             ])
         )
 
-    def build(self, start = 0):
+    def build(self, start=0):
         self._check_index(start)
         return struct.pack('!{}B'.format(self.size - start), *[
             ord(byte.value) for byte in self.elements[start:]
@@ -96,18 +100,18 @@ class ByteArray(object):
     def to_integer(self):
         return generic.to_integer(self.build())
 
-    def get_bits(self, index, length = 1):
+    def get_bits(self, index, length=1):
         self._check_index(index)
         self._check_index(index + length)
-        bytes = self.elements[index:index + length]
-        if len(bytes) == 1:
-            byte = bytes[0]
+        _bytes = self.elements[index:index + length]
+        if len(_bytes) == 1:
+            byte = _bytes[0]
             return (byte.b0, byte.b1, byte.b2, byte.b3,
                     byte.b4, byte.b5, byte.b6, byte.b7)
         else:
             return [
                 (byte.b0, byte.b1, byte.b2, byte.b3,
-                 byte.b4, byte.b5, byte.b6, byte.b7) for byte in bytes
+                 byte.b4, byte.b5, byte.b6, byte.b7) for byte in _bytes
             ]
 
     def get_bit(self, index, offset):
@@ -130,9 +134,8 @@ class ByteArray(object):
 
 class Packet(ByteArray):
 
-    def __init__(self, value = None):
+    def __init__(self, value=None):
         super(Packet, self).__init__(value)
-
 
     def update(self, raw_data):
         ba = ByteArray(raw_data)
@@ -163,49 +166,48 @@ class Packet(ByteArray):
         self.put_int32((value & 0xffffffff00000000) >> 32)
         self.put_int32((value & 0x00000000ffffffff) >> 0)
 
-
     def put_bits(self, *bits):
         bit_length = len(bits)
         if bit_length < 8:
-            octet = ([ 0 ] * (8 - bit_length)) + list(bits)
+            octet = ([0] * (8 - bit_length)) + list(bits)
         else:
             octet = bits[0:8]
-        self.put_int8(int(''.join([ str(b) for b in octet ]), 2))
+        self.put_int8(int(''.join([str(b) for b in octet]), 2))
 
     def put_string(self, value):
         self.update(value)
 
-    def get_int8(self, index = None):
+    def get_int8(self, index=None):
         if index is None:
             index = self.size - 1
         self._check_index(index)
         return self.elements[index].value
 
-    def get_int16(self, index = None):
+    def get_int16(self, index=None):
         if index is None:
             index = self.size - 2
         self._check_index(index)
         self._check_index(index + 2)
         return b''.join([el.value for el in self.elements[index:(index + 2)]])
 
-    def get_int32(self, index = None):
+    def get_int32(self, index=None):
         if index is None:
             index = self.size - 4
         self._check_index(index)
         self._check_index(index + 4)
         return b''.join([el.value for el in self.elements[index:(index + 4)]])
 
-    def get_int64(self, index = None):
+    def get_int64(self, index=None):
         if index is None:
             index = self.size - 8
         self._check_index(index)
         self._check_index(index + 8)
         return b''.join([el.value for el in self.elements[index:(index + 8)]])
 
-
     def get_last(self, length):
         self._check_index(length)
-        return b''.join([el.value for el in self.elements[-1:-length - 1:-1][::-1]])
+        return b''.join(
+            [el.value for el in self.elements[-1:-length - 1:-1][::-1]])
 
     def clear(self):
         self.elements.clear()
@@ -213,16 +215,17 @@ class Packet(ByteArray):
 
 
 def bits_to_integer(bits_array):
-    return int(''.join([ str(b) for b in bits_array ]), 2)
+    return int(''.join([str(b) for b in bits_array]), 2)
 
 
-def number_to_bits(number, pad_bit_length = 0):
+def number_to_bits(number, pad_bit_length=0):
     if not isinstance(number, int):
         raise exceptions.ParameterError('number must be integer')
-    bits = [ int(i) for i in bin(number)[2:] ]
+    bits = [int(i) for i in bin(number)[2:]]
     if len(bits) < pad_bit_length:
-        return ([ 0 ] * (pad_bit_length - len(bits))) + bits
+        return ([0] * (pad_bit_length - len(bits))) + bits
     return bits
+
 
 if __name__ == '__main__':
     def test_packet():
@@ -253,7 +256,6 @@ if __name__ == '__main__':
         packet.put_int64(0x12345678abcdef00)
         assert packet.get_int32() == b'\xab\xcd\xef\x00'
         assert packet.get_int32(packet.size - 8) == b'\x12\x34\x56\x78'
-
 
         packet.put_string(b'Hello World')
         assert packet.get_last(len(b'Hello World')) == b'Hello World'

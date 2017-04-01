@@ -3,6 +3,7 @@
 # Copyright (C) 2017 ShadowMan
 #
 import random
+import socket
 import websocket
 from websocket.ext import handler
 
@@ -13,12 +14,10 @@ ws_server = websocket.create_websocket_server('0.0.0.0', port=8999,
 @ws_server.register_default_handler
 class IndexHandler(handler.WebSocketHandlerProtocol):
     def __init__(self, socket_fd):
-        self._socket_name = None
         handler.WebSocketHandlerProtocol.__init__(self, socket_fd)
 
-    def on_connect(self, socket_name):
-        self._socket_name = socket_name
-        websocket.logger.info('client({}:{}) connected'.format(*socket_name))
+    def on_connect(self):
+        websocket.logger.info('client({}:{}) connected'.format(*self._))
 
     def on_message(self, message):
         websocket.logger.info('client({}:{}) receive message `{}`'.format(
@@ -40,28 +39,22 @@ class IndexHandler(handler.WebSocketHandlerProtocol):
 
 @ws_server.register_handler('/chat')
 class ChatHandler(handler.WebSocketHandlerProtocol):
-    def __init__(self, socket_fd):
-        self._socket_name = None  # type: tuple
+    def __init__(self, socket_fd: socket.socket):
         handler.WebSocketHandlerProtocol.__init__(self, socket_fd)
 
-    def on_connect(self, socket_name):
-        self._socket_name = socket_name
-        websocket.logger.info('client({}:{}) connected'.format(*socket_name))
+    def on_connect(self):
+        return websocket.TextMessage('Welcome to chat room, count = {}'.format(
+            ws_server.count()))
 
     def on_message(self, message):
-        websocket.logger.info('client({}:{}) receive message `{}`'.format(
-            *self._socket_name, message.decode('utf-8')))
-        ws_server.broadcast(websocket.TextMessage(message))
-        return None
+        return ws_server.broadcast(websocket.TextMessage(message))
 
     def on_close(self, code, reason):
-        websocket.logger.info('client({}:{}) closed {}:{}'.format(
-            *self._socket_name, code, reason
-        ))
+        return websocket.TextMessage('XXX exited'.format(
+            ws_server.count()))
 
     def on_error(self, code, reason):
         websocket.logger.warning('client({}:{}) error occurs'.format(
-            *self._socket_name
-        ))
+            *self._socket_name))
 
 ws_server.run_forever()

@@ -10,9 +10,10 @@ class WebSocketHandlerProtocol(object, metaclass=abc.ABCMeta):
 
     def __init__(self, socket_fd: socket.socket):
         self._socket_fd = socket_fd
+        self._socket_name = socket_fd.getpeername()
 
     @abc.abstractclassmethod
-    def on_connect(self, socket_name):
+    def on_connect(self):
         pass
 
     @abc.abstractclassmethod
@@ -29,3 +30,7 @@ class WebSocketHandlerProtocol(object, metaclass=abc.ABCMeta):
 
     def broadcast(self, message):
         pass
+
+    @property
+    def socket_fd(self):
+        return self._socket_fd

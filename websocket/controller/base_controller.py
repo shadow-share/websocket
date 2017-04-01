@@ -44,6 +44,8 @@ class BaseController(object, metaclass=abc.ABCMeta):
     def _distribute_frame(self):
         frame_header = self._tcp_stream.peek_buffer(10)
         try:
+            if len(frame_header) < 2:
+                return
             frame_length = ws_frame.parse_frame_length(frame_header)
         except Exception:
             raise
@@ -63,7 +65,9 @@ class BaseController(object, metaclass=abc.ABCMeta):
             response = self._handlers.on_message(
                 self._before_message_handler(complete_frame.payload_data))
             response = self._after_message_handler(response)
-            if response is None:
+            if response is True:
+                return
+            elif response is None:
                 logger.warning('message handler ignore from client message')
                 return
             elif hasattr(response, 'pack'):
@@ -95,7 +99,14 @@ class BaseController(object, metaclass=abc.ABCMeta):
             reason = complete_frame.payload_data[2:]
         else:
             code, reason = 1000, b''
-        self._handlers.on_close(code, reason)
+        response = self._handlers.on_close(code, reason)
+        # send close message
+        if hasattr(response, 'generate_frame'):
+            response = response.generate_frame
+        if hasattr(response, 'pack'):
+            # broadcast close message
+            # TODO
+            pass
         # If an endpoint receives a Close frame and did not previously send
         # a Close frame, the endpoint MUST send a Close frame in response
         raise exceptions.ConnectClosed((1000, ''))

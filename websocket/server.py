@@ -232,7 +232,7 @@ class WebSocketServerBase(Daemon, metaclass=abc.ABCMeta):
     LISTEN_SIZE = 16
 
     def __init__(self, host: str, port: int, *, pid_file=None, debug=False):
-        ''' WebSocketServerBase members 
+        """ WebSocketServerBase members
         
         :param host: str
         :param port: int
@@ -241,7 +241,7 @@ class WebSocketServerBase(Daemon, metaclass=abc.ABCMeta):
         :type self._server_fd: list[socket.socket]
         :type self._client_list: dict[str, dict[socket.socket, BaseController]]
         :type self._server_address: tuple
-        '''
+        """
         # start deamon
         super(WebSocketServerBase, self).__init__(pid_file=pid_file,
                                                   debug=debug)
@@ -408,9 +408,14 @@ class WebSocketServerBase(Daemon, metaclass=abc.ABCMeta):
             # get handler or default handler
             _handler = self._router.solution(namespace, 'handler')(socket_fd)
             # notification handler connect event
-            _handler.on_connect(socket_fd.getpeername())
+            response = _handler.on_connect()
             # send http-handshake-response
             self._write_queue[socket_fd].append(http_response)
+            # send connect message
+            if hasattr(response, 'pack'):
+                self._write_queue[socket_fd].append(response)
+            elif hasattr(response, 'generate_frame'):
+                self._write_queue[socket_fd].append(response.generate_frame)
             # get controller or default controller
             controller_name = self._router.solution(namespace, 'controller')
             # initial controller
@@ -459,9 +464,9 @@ class WebSocketServerBase(Daemon, metaclass=abc.ABCMeta):
         for socket_fd, namespace in _clients.items():
             while len(self._write_queue[socket_fd]):
                 try:
-                    self._socket_ready_write(socket_fd,
-                                             self._write_queue[socket_fd].pop(),
-                                             namespace)
+                    self._socket_ready_write(
+                        socket_fd, self._write_queue[socket_fd].popleft(),
+                        namespace)
                 except exceptions.ExitWrite:
                     break
 
@@ -509,37 +514,45 @@ class WebSocketServer(WebSocketServerBase):
             self._debug = True
         super(WebSocketServer, self).__init__(host, port, debug=self._debug)
 
-    # On receive frame called.
-    def _socket_ready_receive(self, socket_fd, namespace):
-        # other operate
-        super(WebSocketServer, self)._socket_ready_receive(socket_fd, namespace)
-
-    # Send frame process
-    def _socket_ready_write(self, socket_fd, data_pack: ws_frame.FrameBase,
-                            namespace: str):
-        # other operate
-        super(WebSocketServer, self)._socket_ready_write(socket_fd, data_pack,
-                                                         namespace)
-
     def broadcast(self, message):
-        prev_locals = inspect.stack()[1][0].f_locals
+        _self_class = self._get_handler_self()
+
+        if not hasattr(_self_class, '__namespace__'):
+            raise exceptions.BroadcastError('broadcast context invalid')
+
+        namespace = _self_class.__namespace__
+        if namespace not in self._client_list:
+            raise exceptions.FatalError('Fatal error occurs, please report')
+
+        _context_socket_fd = _self_class.socket_fd
+        for socket_fd in self._client_list[namespace]:
+            if socket_fd == _context_socket_fd:
+                continue
+            if hasattr(message, 'pack'):
+                self._write_queue[socket_fd].append(message)
+            elif hasattr(message, 'generate_frame'):
+                self._write_queue[socket_fd].append(message.generate_frame)
+            else:
+                raise exceptions.BroadcastError('broadcast message invalid')
+        return True
+
+    def count(self):
+        _self_class = self._get_handler_self()
+
+        if not hasattr(_self_class, '__namespace__'):
+            raise exceptions.BroadcastError('broadcast context invalid')
+
+        namespace = _self_class.__namespace__
+        if namespace not in self._client_list:
+            return 1
+        return len(self._client_list[namespace]) + 1  # current connection
+
+    def _get_handler_self(self):
+        prev_locals = inspect.stack()[2][0].f_locals
         if 'self' in prev_locals:
             _self_class = prev_locals['self']
-            if not hasattr(_self_class, '__namespace__'):
-                raise exceptions.BroadcastError('broadcast context invalid')
-            namespace = _self_class.__namespace__
-            if namespace not in self._client_list:
-                raise exceptions.FatalError('Fatal error occurs, please report')
-            _context_socket_fd = _self_class._socket_fd
-            for socket_fd in self._client_list[namespace]:
-                if socket_fd == _context_socket_fd:
-                    continue
-                if hasattr(message, 'pack'):
-                    self._write_queue[socket_fd].append(message)
-                elif hasattr(message, 'generate_frame'):
-                    self._write_queue[socket_fd].append(message.generate_frame)
-                else:
-                    raise exceptions.BroadcastError('broadcast message invalid')
+            return _self_class
+        raise exceptions.FatalError('cannot find handler class')
 
     @property
     def is_debug(self):

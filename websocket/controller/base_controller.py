@@ -99,14 +99,7 @@ class BaseController(object, metaclass=abc.ABCMeta):
             reason = complete_frame.payload_data[2:]
         else:
             code, reason = 1000, b''
-        response = self._handlers.on_close(code, reason)
-        # send close message
-        if hasattr(response, 'generate_frame'):
-            response = response.generate_frame
-        if hasattr(response, 'pack'):
-            # broadcast close message
-            # TODO
-            pass
+        self._handlers.on_close(code, reason)
         # If an endpoint receives a Close frame and did not previously send
         # a Close frame, the endpoint MUST send a Close frame in response
         raise exceptions.ConnectClosed((1000, ''))

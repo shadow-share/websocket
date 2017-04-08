@@ -17,7 +17,8 @@ class IndexHandler(handler.WebSocketHandlerProtocol):
         handler.WebSocketHandlerProtocol.__init__(self, socket_fd)
 
     def on_connect(self):
-        websocket.logger.info('client({}:{}) connected'.format(*self._))
+        websocket.logger.info('client({}:{}) connected'.format(
+            *self._socket_name))
 
     def on_message(self, message):
         websocket.logger.info('client({}:{}) receive message `{}`'.format(
@@ -44,14 +45,14 @@ class ChatHandler(handler.WebSocketHandlerProtocol):
 
     def on_connect(self):
         return websocket.TextMessage('Welcome to chat room, count = {}'.format(
-            ws_server.count()))
+            ws_server.client_count()))
 
     def on_message(self, message):
         return ws_server.broadcast(websocket.TextMessage(message))
 
     def on_close(self, code, reason):
         return websocket.TextMessage('XXX exited'.format(
-            ws_server.count()))
+            ws_server.client_count()))
 
     def on_error(self, code, reason):
         websocket.logger.warning('client({}:{}) error occurs'.format(

@@ -3,9 +3,7 @@
 # Copyright (C) 2017 ShadowMan
 #
 import re
-from websocket.utils import (
-    logger, exceptions
-)
+from websocket.utils import exceptions
 
 
 class Router(object):

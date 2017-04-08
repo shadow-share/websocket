@@ -204,12 +204,15 @@ class Daemon(object):
         os.dup2(_stdout.fileno(), sys.stdout.fileno())
         os.dup2(_stderr.fileno(), sys.stderr.fileno())
 
-        # set signal handler
+        # terminal signal
         signal.signal(signal.SIGTERM, self._signal_handler)
+        # kill signal
         signal.signal(signal.SIGILL, self._signal_handler)
+        # system interrupt
         signal.signal(signal.SIGINT, signal.SIG_IGN)
         # register function at exit
         atexit.register(self._remove_pid_file)
+        # write pid file
         with open(self._pid_file, 'w') as fd:
             fd.write('{pid}\n'.format(pid=os.getpid()))
         logger.info('Daemon has been started')
@@ -228,67 +231,56 @@ class Daemon(object):
 
 class WebSocketServerBase(Daemon, metaclass=abc.ABCMeta):
 
-    # max listen queue size
+    # max message queue size
     LISTEN_SIZE = 16
 
     def __init__(self, host: str, port: int, *, pid_file=None, debug=False):
         """ WebSocketServerBase members
-        
-        :param host: str
-        :param port: int
-        :param pid_file: str
-        :param debug: bool
-        :type self._server_fd: list[socket.socket]
+
+        :type self._server_fd: socket.socket
         :type self._client_list: dict[str, dict[socket.socket, BaseController]]
         :type self._server_address: tuple
         """
-        # start deamon
         super(WebSocketServerBase, self).__init__(pid_file=pid_file,
                                                   debug=debug)
         # server file descriptor
-        self._server_fd = None  # type: socket.socket
+        self._server_fd = None
         # all handshake client
         self._client_list = {'default': {}}
         # Server address information
         self._server_address = (host, port)
         # Write queue
         self._write_queue = OrderedDict()
-        # close frame information (from_endpoint, is receive/send close)
+        # close frame information (endpoint, receive/send close flag)
         self._close_information = dict()
         # router object
         self._router = router.Router()
-        # register default handler
-        self._router.register_default('controller',
-                                      plain_controller.PlainController)
+        # register default controller
+        self.register_default_controller(plain_controller.PlainController)
 
     def register_handler(self, namespace):
         exceptions.raise_parameter_error('namespace', str, namespace)
 
         def _decorator_wrapper(class_object):
-            # isinstance(class_object, handler.WebSocketHandlerProtocol) False
-            if handler.WebSocketHandlerProtocol not in class_object.__bases__:
+            if not issubclass(class_object, handler.WebSocketHandlerProtocol):
                 raise exceptions.ParameterError(
                     'handlers must be derived with WebSocketHandlerProtocol')
             self._router.register(namespace, 'handler', class_object)
             class_object.__namespace__ = namespace
-            logger.info('Handler => {}, registered to namespace => {}'.format(
-                class_object, namespace
-            ))
+            logger.info("Handler: '{namespace}' => {handler}".format(
+                namespace=namespace, handler=class_object))
 
             @functools.wraps(class_object)
             def _handler_wrapper(*args, **kwargs):
-                logger.info('{} handler register on {}'.format(
-                    class_object.__name__, namespace))
                 return class_object(*args, **kwargs)
             return _handler_wrapper
         return _decorator_wrapper
 
     def register_default_handler(self, class_object):
-        if handler.WebSocketHandlerProtocol not in class_object.__bases__:
+        if not issubclass(class_object, handler.WebSocketHandlerProtocol):
             raise exceptions.ParameterError(
                 'handlers must be derived with WebSocketHandlerProtocol')
-        logger.info('Default handler registered => {}'.format(
-            class_object))
+        logger.info('Default handler: {}'.format(class_object))
         self._router.register_default('handler', class_object)
 
         @functools.wraps(class_object)
@@ -298,18 +290,18 @@ class WebSocketServerBase(Daemon, metaclass=abc.ABCMeta):
 
     def register_controller(self, namespace, controller_name):
         exceptions.raise_parameter_error('namespace', str, namespace)
-        if base_controller.BaseController not in controller_name.__bases__:
+        if not issubclass(controller_name, base_controller.BaseController):
             raise exceptions.ParameterError(
                 'handlers must be derived with WebSocketHandlerProtocol')
         self._router.register(namespace, 'controller', controller_name)
-        logger.info('controller => {}, registered to namespace => {}'.format(
-            controller_name, namespace
-        ))
+        logger.info("Controller: {namespace} => {controller}".format(
+            namespace=namespace, controller=controller_name))
 
     def register_default_controller(self, controller_name):
-        if base_controller.BaseController not in controller_name.__bases__:
+        if not issubclass(controller_name, base_controller.BaseController):
             raise exceptions.ParameterError(
                 'handlers must be derived with WebSocketHandlerProtocol')
+        logger.info('Default controller: {}'.format(controller_name))
         self._router.register_default('controller', controller_name)
 
     def run_forever(self):
@@ -331,9 +323,8 @@ class WebSocketServerBase(Daemon, metaclass=abc.ABCMeta):
 
     def _select_loop(self):
         self._selector = selectors.DefaultSelector()
-        self._selector.register(self._server_fd,
-                                selectors.EVENT_READ,
-                                (self._accept_client, None))
+        self._selector.register(
+            self._server_fd, selectors.EVENT_READ, (self._accept_client, None))
 
         try:
             while True:
@@ -347,7 +338,7 @@ class WebSocketServerBase(Daemon, metaclass=abc.ABCMeta):
                             callback(key.fileobj)
                         else:
                             callback(key.fileobj, namespace)
-                    except exceptions.ExitWrite:
+                    except exceptions.ExitWrite:  # on client/server closed
                         pass
                 self._clean_write_queue()
         except KeyboardInterrupt:  # when start debug mode listen Ctrl-C
@@ -361,8 +352,7 @@ class WebSocketServerBase(Daemon, metaclass=abc.ABCMeta):
         # accept new client
         client_fd, client_address = server_fd.accept()
         # logger
-        logger.debug('Client({}:{}) connecting, fileno = {}'.format(
-            *client_address, client_fd.fileno()))
+        logger.debug('Client({}:{}) connecting'.format(*client_address))
         # set non=blocking
         client_fd.setblocking(False)
         # register listen EVENT_READ
@@ -370,11 +360,11 @@ class WebSocketServerBase(Daemon, metaclass=abc.ABCMeta):
                                 selectors.EVENT_READ,
                                 (self._accept_http_handshake, None))
 
-        # record close information
+        # close information
         self._close_information[client_fd] = (None, False)
         # write queue for single socket descriptor
         self._write_queue[client_fd] = deque()  # type: deque
-        # Received data is an HTTP request
+        # create tcp stream class
         self._client_list['default'][client_fd] = \
             tcp_stream.TCPStream(client_fd)
 
@@ -390,9 +380,13 @@ class WebSocketServerBase(Daemon, metaclass=abc.ABCMeta):
         logger.debug('Request: {}'.format(repr(http_request)))
         # TODO. chunk header-field
         if 'Content-Length' in http_request:
-            print('have any payload', http_request['Content-Length'].value)
+            logger.info('Request has payload, length = {}'.format(
+                http_request['Content-Length'].value))
+            # buffer length is too short
+            if _tcp_stream.get_buffer_length() < \
+                    http_request['Content-Length'].value:
+                return
             # drop payload data
-            # TODO. payload data send to connect handler
             _tcp_stream.feed_buffer(http_request['Content-Length'].value)
 
         ws_key = http_request[b'Sec-WebSocket-Key']
@@ -524,19 +518,21 @@ class WebSocketServer(WebSocketServerBase):
         if namespace not in self._client_list:
             raise exceptions.FatalError('Fatal error occurs, please report')
 
+        if hasattr(message, 'pack'):
+            pass
+        elif hasattr(message, 'generate_frame'):
+            message = message.generate_frame
+        else:
+            raise exceptions.BroadcastError('broadcast message invalid')
+
         _context_socket_fd = _self_class.socket_fd
         for socket_fd in self._client_list[namespace]:
             if socket_fd == _context_socket_fd:
                 continue
-            if hasattr(message, 'pack'):
-                self._write_queue[socket_fd].append(message)
-            elif hasattr(message, 'generate_frame'):
-                self._write_queue[socket_fd].append(message.generate_frame)
-            else:
-                raise exceptions.BroadcastError('broadcast message invalid')
+            self._write_queue[socket_fd].append(message)
         return True
 
-    def count(self):
+    def client_count(self):
         _self_class = self._get_handler_self()
 
         if not hasattr(_self_class, '__namespace__'):
@@ -545,9 +541,10 @@ class WebSocketServer(WebSocketServerBase):
         namespace = _self_class.__namespace__
         if namespace not in self._client_list:
             return 1
-        return len(self._client_list[namespace]) + 1  # current connection
+        return len(self._client_list[namespace]) + 1  # and current connection
 
-    def _get_handler_self(self):
+    @staticmethod
+    def _get_handler_self():
         prev_locals = inspect.stack()[2][0].f_locals
         if 'self' in prev_locals:
             _self_class = prev_locals['self']

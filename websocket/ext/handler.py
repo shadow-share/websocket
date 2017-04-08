@@ -28,9 +28,6 @@ class WebSocketHandlerProtocol(object, metaclass=abc.ABCMeta):
     def on_error(self, code, reason):
         pass
 
-    def broadcast(self, message):
-        pass
-
     @property
     def socket_fd(self):
         return self._socket_fd

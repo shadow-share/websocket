@@ -1,6 +1,10 @@
 TODO list for websocket develop
 -------------------------------
 
+websocket develop note
+
+## SERVER
+
 ### XXX
 
  * connection close-information
@@ -75,3 +79,12 @@ TODO list for websocket develop
         def __init__(self):
             pass
     ```
+
+## Client
+
+### Feature
+
+ * Customer request header
+ 
+ * register protocol/version/...
+ 

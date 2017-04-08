@@ -51,3 +51,6 @@ class TCPStream(object):
 
     def get_socket_fd(self):
         return self._socket_fd
+
+    def get_buffer_length(self):
+        return len(self._receive_buffer)

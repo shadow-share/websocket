@@ -508,7 +508,7 @@ class WebSocketServer(WebSocketServerBase):
             self._debug = True
         super(WebSocketServer, self).__init__(host, port, debug=self._debug)
 
-    def broadcast(self, message):
+    def broadcast(self, message, include_self: bool=False):
         _self_class = self._get_handler_self()
 
         if not hasattr(_self_class, '__namespace__'):
@@ -527,7 +527,7 @@ class WebSocketServer(WebSocketServerBase):
 
         _context_socket_fd = _self_class.socket_fd
         for socket_fd in self._client_list[namespace]:
-            if socket_fd == _context_socket_fd:
+            if socket_fd == _context_socket_fd and include_self:
                 continue
             self._write_queue[socket_fd].append(message)
         return True

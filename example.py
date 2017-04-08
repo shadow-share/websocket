@@ -44,15 +44,14 @@ class ChatHandler(handler.WebSocketHandlerProtocol):
         handler.WebSocketHandlerProtocol.__init__(self, socket_fd)
 
     def on_connect(self):
-        return websocket.TextMessage('Welcome to chat room, count = {}'.format(
-            ws_server.client_count()))
+        return ws_server.broadcast(websocket.TextMessage(
+            'Welcome {}:{} join chat'.format(*self._socket_name)), True)
 
     def on_message(self, message):
         return ws_server.broadcast(websocket.TextMessage(message))
 
     def on_close(self, code, reason):
-        return websocket.TextMessage('XXX exited'.format(
-            ws_server.client_count()))
+        return ws_server.broadcast(websocket.TextMessage('has exit signal'))
 
     def on_error(self, code, reason):
         websocket.logger.warning('client({}:{}) error occurs'.format(

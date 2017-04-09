@@ -117,8 +117,6 @@
 # state (cf. Sections 4.1 and 4.2.2.)  If at any point the state of
 # the WebSocket connection changes, the endpoint MUST abort the
 # following steps.
-
-# If the data is being sent by the client, the frame(s) MUST be masked
 import os
 import abc
 import sys
@@ -376,40 +374,32 @@ class WebSocketServerBase(Daemon, metaclass=abc.ABCMeta):
         pos = _tcp_stream.find_buffer(b'\r\n\r\n')
         if pos is -1:
             return
-        http_request = http_message.factory(_tcp_stream.feed_buffer(pos))
+        http_request = http_message.factory_http_message(
+            _tcp_stream.feed_buffer(pos))
         logger.debug('Request: {}'.format(repr(http_request)))
         # TODO. chunk header-field
-        if 'Content-Length' in http_request:
+        if 'Content-Length' in http_request.header:
             logger.info('Request has payload, length = {}'.format(
-                http_request['Content-Length'].value))
+                http_request.header.get_value('Content-Length')))
             # buffer length is too short
             if _tcp_stream.get_buffer_length() < \
-                    http_request['Content-Length'].value:
+                    http_request.header.get_value('Content-Length'):
                 return
             # drop payload data
             _tcp_stream.feed_buffer(http_request['Content-Length'].value)
 
-        ws_key = http_request[b'Sec-WebSocket-Key']
+        ws_key = http_request.header.get_value('Sec-WebSocket-Key')
         http_response = http_message.HttpResponse(
-            101, *http_message.create_header_fields(
+            101, *(
                 (b'Upgrade', b'websocket'),
                 (b'Connection', b'Upgrade'),
-                (b'Sec-WebSocket-Accept', ws_utils.ws_accept_key(ws_key.value))
+                (b'Sec-WebSocket-Accept', ws_utils.ws_accept_key(ws_key))
             )
         )
         try:
-            namespace = generic.to_string(http_request.resource)
+            namespace = generic.to_string(http_request.url_path)
             # get handler or default handler
             _handler = self._router.solution(namespace, 'handler')(socket_fd)
-            # notification handler connect event
-            response = _handler.on_connect()
-            # send http-handshake-response
-            self._write_queue[socket_fd].append(http_response)
-            # send connect message
-            if hasattr(response, 'pack'):
-                self._write_queue[socket_fd].append(response)
-            elif hasattr(response, 'generate_frame'):
-                self._write_queue[socket_fd].append(response.generate_frame)
             # get controller or default controller
             controller_name = self._router.solution(namespace, 'controller')
             # initial controller
@@ -419,6 +409,15 @@ class WebSocketServerBase(Daemon, metaclass=abc.ABCMeta):
                 self._client_list['default'].pop(socket_fd),
                 self._write_queue[socket_fd].append,
                 _handler)
+            # send http-handshake-response
+            self._write_queue[socket_fd].append(http_response)
+            # notification handler connect event
+            response = _handler.on_connect()
+            # send connect message
+            if hasattr(response, 'pack'):
+                self._write_queue[socket_fd].append(response)
+            elif hasattr(response, 'generate_frame'):
+                self._write_queue[socket_fd].append(response.generate_frame)
             # modify selector data
             self._selector.modify(socket_fd,
                                   selectors.EVENT_READ,
@@ -527,7 +526,7 @@ class WebSocketServer(WebSocketServerBase):
 
         _context_socket_fd = _self_class.socket_fd
         for socket_fd in self._client_list[namespace]:
-            if socket_fd == _context_socket_fd and include_self:
+            if socket_fd == _context_socket_fd and not include_self:
                 continue
             self._write_queue[socket_fd].append(message)
         return True

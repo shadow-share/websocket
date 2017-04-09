@@ -2,9 +2,9 @@
 #
 # Copyright (C) 2017 ShadowMan
 #
-
-'''
+"""
 A high-level overview of the framing is given in the following figure.
+
 B 0 * * * * * * * 1 * * * * * * * 2 * * * * * * * 3 * * * * * * * -
   |               |               |               |               |
 b 0               |   1           |       2       |           3   |
@@ -37,8 +37,7 @@ RSV1, RSV2, RSV3:  1 bit each
       MUST be 0 unless an extension is negotiated that defines meanings
       for non-zero values.  If a nonzero value is received and none of
       the negotiated extensions defines the meaning of such a nonzero
-      value, the receiving endpoint MUST _Fail the WebSocket
-      Connection_.
+      value, the receiving endpoint MUST _Fail the WebSocket Connection_.
 
 
 Opcode:  4 bits
@@ -78,7 +77,7 @@ Payload length:  7 bits, 7+16 bits, or 7+64 bits
       payload length.  If 126, the following 2 bytes interpreted as a
       16-bit unsigned integer are the payload length.  If 127, the
       following 8 bytes interpreted as a 64-bit unsigned integer (the
-      most significant bit MUST be 0) are the payload length.  Multibyte
+      most significant bit MUST be 0) are the payload length.  Multi-byte
       length quantities are expressed in network byte order.  Note that
       in all cases, the minimal number of bytes MUST be used to encode
       the length, for example, the length of a 124-byte-long string
@@ -94,8 +93,7 @@ Masking-key:  0 or 4 bytes
       All frames sent from the client to the server are masked by a
       32-bit value that is contained within the frame.  This field is
       present if the mask bit is set to 1 and is absent if the mask bit
-      is set to 0.  See Section 5.3 for further information on client-
-      to-server masking.
+      is set to 0.
 
 
 Payload data:  (x+y) bytes
@@ -120,15 +118,14 @@ Application data:  y bytes
       after any "Extension data".  The length of the "Application data"
       is equal to the payload length minus the length of the "Extension
       data".
-
-'''
+"""
 import os
 import abc
 import struct
-
 from websocket.utils import (
     generic, ws_utils, exceptions, packet, logger
 )
+
 
 def ws_transform_payload_data(data, mask_key):
     if not isinstance(mask_key, int):
@@ -140,9 +137,8 @@ def ws_transform_payload_data(data, mask_key):
     if not isinstance(data, (str, bytes)):
         raise KeyError('data must be str or bytes type')
 
-    # Octet i of the transformed data is the XOR of octet i
-    # of the original data with octet at index i modulo 4
-    # of the masking key
+    # Octet i of the transformed data is the XOR of octet i of the original
+    # data with octet at index i modulo 4 of the masking key
     mask_key_octet = {
         0: (mask_key & 0xff000000) >> 24,
         1: (mask_key & 0x00ff0000) >> 16,
@@ -152,8 +148,8 @@ def ws_transform_payload_data(data, mask_key):
 
     transformed_string = b''
     for index, value in enumerate(generic.to_bytes(data)):
-        transformed_string += struct.pack('!B', (
-            value ^ mask_key_octet[index % 4]) & 0xff)
+        transformed_string += struct.pack(
+            '!B', (value ^ mask_key_octet[index % 4]) & 0xff)
     return transformed_string
 
 
@@ -231,6 +227,22 @@ class FrameBase(object, metaclass=abc.ABCMeta):
     def __init__(self, byte_array):
         if not isinstance(byte_array, packet.ByteArray):
             raise RuntimeError('the byte array is invalid')
+
+        # initializing all websocket-frame flags
+        self._flag_fin = 1
+        self._flag_rsv1 = 0
+        self._flag_rsv2 = 0
+        self._flag_rsv3 = 0
+        self._flag_opcode = 1
+
+        self._flag_mask = 0
+        self._flag_payload_length = 0
+        self._payload_length = 0
+
+        self._mask_key = False
+
+        self._payload_data = None
+
         self._byte_array = byte_array
         # parse frame
         self.parse_octet()
@@ -319,6 +331,8 @@ class FrameBase(object, metaclass=abc.ABCMeta):
             frame.put_int32(self._mask_key)
         # Payload data
         if self._flag_mask is 1:
+            # If the data is being sent by the client, the frame(s) MUST be
+            # masked
             _payload_data = ws_transform_payload_data(self._payload_data,
                                                       self._mask_key)
             frame.put_string(_payload_data)
@@ -367,13 +381,15 @@ class FrameBase(object, metaclass=abc.ABCMeta):
         return self._global_frame_type[self._flag_opcode]
 
     def __str__(self):
-        return '<WebSocket-Frame Fin={fin_flag} Type=\'{type}\' Payload_length={payload_length} Mask_key={mask_key}>'.format(
-            fin_flag = self.flag_fin,
-            type = generic.to_string(self._global_frame_type[self.flag_opcode]),
-            payload_length = self._payload_length,
-            mask_key = False if self._mask_key is False else hex(
-                self._mask_key).upper()
-        )
+        key = False if self._mask_key is False else hex(self._mask_key).upper()
+        return '<WebSocket-Frame ' \
+               'Fin={fin_flag} ' \
+               'Type=\'{type}\' ' \
+               'Payload_length={payload_length} ' \
+               'Mask_key={mask_key}>'.format(
+            fin_flag=self.flag_fin,
+            type=generic.to_string(self._global_frame_type[self.flag_opcode]),
+            payload_length=self._payload_length, mask_key=key)
 
     def __repr__(self):
         return self.__str__()

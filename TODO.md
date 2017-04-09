@@ -9,6 +9,7 @@ websocket develop note
 
  * connection close-information
 
+ * Http Verify and WS-Handshake frame verify
 
 ### Fix Bugs
 

@@ -378,10 +378,12 @@ class WebSocketServerBase(Daemon, metaclass=abc.ABCMeta):
             if not support_extension[1]:
                 support_extension = None
         except exceptions.HttpVerifierError:
-            http_response = http_message.HttpResponse(403)
-            # no error
+            http_response = http_message.HttpResponse(
+                403, (b'X-Forbidden-Reason', b'http-options-invalid'))
+            # verify error occurs
             self._socket_ready_write(
                 socket_fd, http_response, http_request.url_path)
+            self._close_client(socket_fd, 'default')
         logger.debug('Request: {}'.format(repr(http_request)))
         # TODO. chunk header-field
         if 'Content-Length' in http_request.header:
@@ -581,7 +583,7 @@ class WebSocketServer(WebSocketServerBase):
 
 def create_websocket_server(host='localhost', port=8999, *, debug=False,
                             logging_level='info', log_file=None,
-                            server_name=None):
+                            server_name=True):
     with WebSocketServer(host, port, debug=debug,
                          server_name=server_name) as server:
         logger.init(logging_level, server.is_debug, log_file)

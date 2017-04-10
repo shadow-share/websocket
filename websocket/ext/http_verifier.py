@@ -51,6 +51,8 @@ class HttpHandshakeVerifier(object):
                 '{} loss `Host` option'.format(self._client_name))
         if not _server_name:
             raise exceptions.FatalError('Server Internal Error, Please report')
+        if _server_name[0] is True:
+            return True
 
         _host = self._request.header.get_value('Host', value_type=str)
         if _server_name[1] is 80:

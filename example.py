@@ -7,9 +7,7 @@ import socket
 import websocket
 from websocket.ext import handler
 
-ws_server = websocket.create_websocket_server(
-    '0.0.0.0', port=8999, debug=False, server_name='localhost')
-
+ws_server = websocket.create_websocket_server('0.0.0.0', port=8999, debug=False)
 
 
 @ws_server.register_default_handler

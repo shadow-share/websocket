@@ -14,7 +14,6 @@ class KeyValuePairs(object):
     :param self._index: Lowercase keys
     :param self._value: Value in the key-value pairs
     """
-
     def __init__(self, key: [bytes, str], value: [bytes, str]):
         self._key = generic.to_bytes(key)
         self._index = generic.to_bytes(key).lower()
@@ -39,7 +38,10 @@ class KeyValuePairs(object):
 
 
 class HttpOptions(object):
-
+    """ Http header options
+    
+    :param self._options: options key-value-pairs
+    """
     def __init__(self, *options, **kwargs):
         self._options = dict()
         self.update(*options, **kwargs)
@@ -286,6 +288,8 @@ if __name__ == '__main__':
         assert ops.pack() == b'key2: value2\r\nkey1: value1'
     assert 'key1' in ops
     assert 'KEY1' in ops
+    assert 'KeY1' in ops
+    assert 'key-1' not in ops
 
     req = HttpRequest('GET', '/url_path?query=value#frag=footer',
                       ('key1', 'value1'), ('key2', 'value2'), payload_data='+')

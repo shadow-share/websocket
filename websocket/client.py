@@ -90,6 +90,11 @@
 # not present in the client's handshake (the server has indicated a
 # subprotocol not requested by the client), the client MUST _Fail
 # the WebSocket Connection_.
+
+# Optionally, an |Origin| header field.
+# This header field is sent by all browser clients.
+# A connection attempt lacking this header field SHOULD NOT be
+# interpreted as coming from a browser client.
 import contextlib
 
 class WebSocketClient(object):

@@ -80,6 +80,10 @@ websocket develop note
         def __init__(self):
             pass
     ```
+ 
+ * Websocket Frame opcode register 
+ 
+ * wss Server
 
 ## Client
 

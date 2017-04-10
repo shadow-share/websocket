@@ -7,8 +7,8 @@ A high-level overview of the framing is given in the following figure.
 
 B 0 * * * * * * * 1 * * * * * * * 2 * * * * * * * 3 * * * * * * * -
   |               |               |               |               |
-b 0               |   1           |       2       |           3   |
-  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 |
+  0               |   1           |       2       |           3   |
+i 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 |
  +-+-+-+-+-------+-+-------------+-------------------------------+
  |F|R|R|R| opcode|M| Payload len |    Extended payload length    |
  |I|S|S|S|  (4)  |A|     (7)     |             (16/64)           |
@@ -234,13 +234,13 @@ class FrameBase(object, metaclass=abc.ABCMeta):
         self._flag_rsv2 = 0
         self._flag_rsv3 = 0
         self._flag_opcode = 1
-
+        # Byte index: 2
         self._flag_mask = 0
         self._flag_payload_length = 0
         self._payload_length = 0
-
+        # Byte index: [3,7)
         self._mask_key = False
-
+        # payload data
         self._payload_data = None
 
         self._byte_array = byte_array

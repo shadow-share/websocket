@@ -7,8 +7,9 @@ import socket
 import websocket
 from websocket.ext import handler
 
-ws_server = websocket.create_websocket_server('0.0.0.0', port=8999,
-                                              debug=False)
+ws_server = websocket.create_websocket_server(
+    '0.0.0.0', port=8999, debug=False, server_name='localhost')
+
 
 
 @ws_server.register_default_handler
@@ -51,7 +52,8 @@ class ChatHandler(handler.WebSocketHandlerProtocol):
         return ws_server.broadcast(websocket.TextMessage(message))
 
     def on_close(self, code, reason):
-        return ws_server.broadcast(websocket.TextMessage('has exit signal'))
+        return ws_server.broadcast(websocket.TextMessage(
+            '{} exit chat room'.format(self._socket_name)))
 
     def on_error(self, code, reason):
         websocket.logger.warning('client({}:{}) error occurs'.format(

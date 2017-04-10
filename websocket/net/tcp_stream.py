@@ -18,6 +18,7 @@ class TCPStream(object):
         self._receive_buffer = self._receive_buffer + self._socket_feed(4096)
 
     def find_buffer(self, sub_content):
+        self.ready_receive()
         sub_content = generic.to_bytes(sub_content)
         pos = self._receive_buffer.find(sub_content)
         if pos >= 0:
@@ -25,6 +26,7 @@ class TCPStream(object):
         return pos
 
     def feed_buffer(self, stop=None, start=0):
+        self.ready_receive()
         if stop is None:
             stop = len(self._receive_buffer)
         else:
@@ -34,6 +36,7 @@ class TCPStream(object):
         return rst
 
     def peek_buffer(self, stop=None, start=0):
+        self.ready_receive()
         if stop is None:
             stop = len(self._receive_buffer)
         else:
@@ -41,16 +44,21 @@ class TCPStream(object):
         return self._receive_buffer[start:stop]
 
     def buffer_length(self):
+        self.ready_receive()
         return len(self._receive_buffer)
 
     def _socket_feed(self, buffer_size=4096):
         try:
             return self._socket_fd.recv(buffer_size)
+        except BlockingIOError:
+            return b''
         except Exception:
             raise
 
     def get_socket_fd(self):
+        self.ready_receive()
         return self._socket_fd
 
     def get_buffer_length(self):
+        self.ready_receive()
         return len(self._receive_buffer)

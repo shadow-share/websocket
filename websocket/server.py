@@ -3,24 +3,12 @@
 # Copyright (C) 2017 ShadowMan
 #
 
-# Optionally, a |Sec-WebSocket-Extensions| header field, with a
-# list of values indicating which extensions the client would like
-# to speak.
-
 # Optionally, other header fields, such as those used to send
 # cookies or request authentication to a server.  Unknown header
 # fields are ignored
 
 # If the connection is happening on an HTTPS (HTTP-over-TLS) port,
 # perform a TLS handshake over the connection.
-
-# The |Origin| header field in the client's handshake indicates
-# the origin of the script establishing the connection. If the
-# server does not validate the origin, it will accept connections
-# from anywhere.  If the server does not wish to accept this
-# connection, it MUST return an appropriate HTTP error code
-# (e.g., 403 Forbidden) and abort the WebSocket handshake
-# described in this section.
 
 # https://tools.ietf.org/html/rfc6455#section-4.2.2 - /Version/
 
@@ -130,7 +118,9 @@ from collections import deque, OrderedDict
 from websocket.utils import (
     exceptions, logger, ws_utils, generic
 )
-from websocket.ext import handler, router
+from websocket.ext import (
+    handler, router, http_verifier
+)
 from websocket.net import (
     ws_frame, tcp_stream, http_message
 )
@@ -370,12 +360,28 @@ class WebSocketServerBase(Daemon, metaclass=abc.ABCMeta):
         _tcp_stream = \
             self._client_list['default'][socket_fd]  # type:tcp_stream.TCPStream
         # receive data from kernel tcp buffer
-        _tcp_stream.ready_receive()
         pos = _tcp_stream.find_buffer(b'\r\n\r\n')
         if pos is -1:
             return
         http_request = http_message.factory_http_message(
             _tcp_stream.feed_buffer(pos))
+        # Verify http request is correct
+        support_extension = tuple()
+        try:
+            support_extension_list = \
+                http_verifier.verify_request(
+                    socket_fd.getpeername(), http_request)
+            support_extension = (
+                b'Sec-WebSocket-Extensions',
+                b','.join(map(
+                    lambda x: generic.to_bytes(x), support_extension_list)))
+            if not support_extension[1]:
+                support_extension = None
+        except exceptions.HttpVerifierError:
+            http_response = http_message.HttpResponse(403)
+            # no error
+            self._socket_ready_write(
+                socket_fd, http_response, http_request.url_path)
         logger.debug('Request: {}'.format(repr(http_request)))
         # TODO. chunk header-field
         if 'Content-Length' in http_request.header:
@@ -393,7 +399,8 @@ class WebSocketServerBase(Daemon, metaclass=abc.ABCMeta):
             101, *(
                 (b'Upgrade', b'websocket'),
                 (b'Connection', b'Upgrade'),
-                (b'Sec-WebSocket-Accept', ws_utils.ws_accept_key(ws_key))
+                (b'Sec-WebSocket-Accept', ws_utils.ws_accept_key(ws_key)),
+                support_extension
             )
         )
         try:
@@ -463,17 +470,16 @@ class WebSocketServerBase(Daemon, metaclass=abc.ABCMeta):
                 except exceptions.ExitWrite:
                     break
 
-    def _socket_ready_write(self, socket_fd, data_pack: ws_frame.FrameBase,
-                            namespace: str):
+    def _socket_ready_write(self, socket_fd, data_pack, namespace: str):
         try:
-            if isinstance(data_pack, ws_frame.FrameBase) and \
-                            data_pack.frame_type == ws_frame.Close_Frame:
-                # from server(normal or error occurs) first send close-frame
-                if self._close_information[socket_fd][0] is None:
-                    self._close_information[socket_fd] = ('server', False)
-                else:
-                    self._close_information[socket_fd] = \
-                                (self._close_information[socket_fd][0], True)
+            if isinstance(data_pack, ws_frame.FrameBase):
+                if data_pack.frame_type == ws_frame.Close_Frame:
+                    # from server(normal or error occurs) first send close-frame
+                    if self._close_information[socket_fd][0] is None:
+                        self._close_information[socket_fd] = ('server', False)
+                    else:
+                        self._close_information[socket_fd] = (
+                            self._close_information[socket_fd][0], True)
             if hasattr(data_pack, 'pack'):
                 logger.debug('Response: {}'.format(data_pack))
                 socket_fd.sendall(data_pack.pack())
@@ -498,13 +504,16 @@ class WebSocketServerBase(Daemon, metaclass=abc.ABCMeta):
 
 class WebSocketServer(WebSocketServerBase):
 
-    def __init__(self, host, port, *, debug=False):
+    def __init__(self, host, port, *, debug=False, server_name=None):
         self._debug = bool(debug)
         if os.name == 'nt':
             logger.wait_logger_init_msg(
                 logger.warning,
                 'WebSocketServer running in Windows, only DEBUG mode')
             self._debug = True
+        if server_name is None:
+            server_name = host
+        http_verifier.set_server_name(server_name, port=port)
         super(WebSocketServer, self).__init__(host, port, debug=self._debug)
 
     def broadcast(self, message, include_self: bool=False):
@@ -554,6 +563,14 @@ class WebSocketServer(WebSocketServerBase):
     def is_debug(self):
         return self._debug
 
+    @staticmethod
+    def disable_http_verifier():
+        return http_verifier.disable()
+
+    @staticmethod
+    def enable_http_verifier():
+        return http_verifier.enable()
+
     def __enter__(self):
         return self
 
@@ -563,7 +580,9 @@ class WebSocketServer(WebSocketServerBase):
 
 
 def create_websocket_server(host='localhost', port=8999, *, debug=False,
-                            logging_level='info', log_file=None):
-    with WebSocketServer(host, port, debug=debug) as server:
+                            logging_level='info', log_file=None,
+                            server_name=None):
+    with WebSocketServer(host, port, debug=debug,
+                         server_name=server_name) as server:
         logger.init(logging_level, server.is_debug, log_file)
         return server

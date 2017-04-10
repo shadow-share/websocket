@@ -54,3 +54,8 @@ class ExitWrite(Exception):
 
 class BroadcastError(Exception):
     pass
+
+
+class HttpVerifierError(Exception):
+    pass
+

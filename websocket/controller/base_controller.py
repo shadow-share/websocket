@@ -3,10 +3,10 @@
 # Copyright (C) 2017 ShadowMan
 #
 import abc
-from websocket.ext.handler import WebSocketHandlerProtocol
-from websocket.net import tcp_stream, http_message, ws_frame, http_verifier
+
+from websocket.net import tcp_stream, ws_frame
 from websocket.utils import (
-    logger, exceptions, ws_utils
+    logger, exceptions
 )
 
 
@@ -36,12 +36,6 @@ class BaseController(object, metaclass=abc.ABCMeta):
         }
 
     def ready_receive(self):
-        # feed all socket tcp buffer
-        self._tcp_stream.ready_receive()
-        # on receive ready call
-        self._distribute_frame()
-
-    def _distribute_frame(self):
         frame_header = self._tcp_stream.peek_buffer(10)
         try:
             if len(frame_header) < 2:
@@ -49,6 +43,8 @@ class BaseController(object, metaclass=abc.ABCMeta):
             frame_length = ws_frame.parse_frame_length(frame_header)
         except Exception:
             raise
+
+        # TODO. websocket frame verify
 
         if self._tcp_stream.buffer_length() < frame_length:
             return

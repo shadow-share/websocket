@@ -59,3 +59,6 @@ class BroadcastError(Exception):
 class HttpVerifierError(Exception):
     pass
 
+
+class FrameVerifierError(Exception):
+    pass

@@ -476,6 +476,8 @@ class FrameGenerator(FrameBase):
         return self
 
 
+# A server MUST NOT mask any frames that it sends to
+# the client.
 def _build_base_frame(from_client, extra_data):
     # create a frame
     rst_frame = FrameGenerator()

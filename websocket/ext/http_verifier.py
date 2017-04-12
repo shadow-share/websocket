@@ -145,3 +145,4 @@ def verify_request(client_name, request):
         # list of values indicating which extensions the client would like
         # to speak.
         return verifier.verify_sec_websocket_extensions()
+        # Unknown header fields are ignored

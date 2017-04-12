@@ -3,14 +3,8 @@
 # Copyright (C) 2017 ShadowMan
 #
 
-# Optionally, other header fields, such as those used to send
-# cookies or request authentication to a server.  Unknown header
-# fields are ignored
-
 # If the connection is happening on an HTTPS (HTTP-over-TLS) port,
 # perform a TLS handshake over the connection.
-
-# https://tools.ietf.org/html/rfc6455#section-4.2.2 - /Version/
 
 #  The absence of such a field is equivalent to the null value
 # (meaning that if the server does not wish to agree to one of
@@ -22,18 +16,10 @@
 # Supporting Multiple Versions of WebSocket Protocol
 
 
-# a client MUST mask all frames that it sends to the server.  (Note
-# that masking is done whether or not the WebSocket Protocol is running
-# over TLS.)  The server MUST close the connection upon receiving a
-# frame that is not masked.  In this case, a server MAY send a Close
-# frame with a status code of 1002 (protocol error)
+# a client MUST mask all frames that it sends to the server.
 
-# A server MUST NOT mask any frames that it sends to
-# the client.  A client MUST close a connection if it detects a masked
+# A client MUST close a connection if it detects a masked
 # frame.
-
-# An unfragmented message consists of a single frame with the FIN
-# bit set (Section 5.2) and an opcode other than 0.
 
 # A fragmented message consists of a single frame with the FIN bit
 # clear and an opcode other than 0, followed by zero or more frames
@@ -62,10 +48,6 @@
 #
 #     FIN = 1, opcode = 0     # opcode = 0(continuation frame)
 
-# Control frames (see Section 5.5) MAY be injected in the middle of
-# a fragmented message.  Control frames themselves MUST NOT be
-# fragmented.
-
 # Message fragments MUST be delivered to the recipient in the order
 # sent by the sender.
 
@@ -82,9 +64,6 @@
 # Clients and servers MUST support receiving both fragmented and
 # unfragmented messages.
 
-# As control frames cannot be fragmented, an intermediary MUST NOT
-# attempt to change the fragmentation of a control frame.
-
 # An intermediary MUST NOT change the fragmentation of a message if
 # any reserved bit values are used and the meaning of these values
 # is not known to the intermediary.
@@ -94,10 +73,6 @@
 # example, if a streaming API is used, a part of a frame can be
 # delivered to the application.  However, note that this assumption
 # might not hold true for all future WebSocket extensions.
-
-# All control frames MUST have a payload length of 125 bytes or less
-# and MUST NOT be fragmented.
-
 
 #  Sending and Receiving Data
 
@@ -397,6 +372,8 @@ class WebSocketServerBase(Daemon, metaclass=abc.ABCMeta):
             _tcp_stream.feed_buffer(http_request['Content-Length'].value)
 
         ws_key = http_request.header.get_value('Sec-WebSocket-Key')
+        # Optionally, other header fields, such as those used to send
+        # cookies or request authentication to a server.
         http_response = http_message.HttpResponse(
             101, *(
                 (b'Upgrade', b'websocket'),

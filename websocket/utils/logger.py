@@ -46,7 +46,7 @@ def init(level: str, console: bool=False, log_file: str=None):
     if not (log_file is False) and console is False:
         if log_file is None:
             # Only run under *nix
-            log_file = '/tmp/websocket_server.log'
+            log_file = '/var/log/websocket_server.log'
         handler = logging.FileHandler(log_file)
         handler.setLevel(level)
 

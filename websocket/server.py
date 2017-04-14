@@ -120,7 +120,7 @@ class Daemon(object):
         self._stdout = stdout  # type: str
         self._stderr = stderr  # type: str
         if pid_file is None:
-            pid_file = '/tmp/websocket_server.pid'
+            pid_file = '/var/run/websocket_server.pid'
         self._pid_file = os.path.abspath(pid_file)  # type: str
 
     def run_forever(self):

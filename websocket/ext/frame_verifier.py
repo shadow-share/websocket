@@ -48,6 +48,7 @@ class FrameVerifier(object):
             # of 1002
             logger.info('{} send frame invalid'.format(self._client_name))
             return False
+        return True
 
     def __enter__(self):
         return self

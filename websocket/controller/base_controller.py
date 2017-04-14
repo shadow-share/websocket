@@ -3,7 +3,7 @@
 # Copyright (C) 2017 ShadowMan
 #
 import abc
-
+from websocket.ext import frame_verifier
 from websocket.net import tcp_stream, ws_frame
 from websocket.utils import (
     logger, exceptions
@@ -44,12 +44,12 @@ class BaseController(object, metaclass=abc.ABCMeta):
         except Exception:
             raise
 
-        # TODO. websocket frame verify
-
         if self._tcp_stream.buffer_length() < frame_length:
             return
         frame = ws_frame.WebSocketFrame(
             self._tcp_stream.feed_buffer(frame_length))
+        if not frame_verifier.verify_frame(self._socket_fd, frame):
+            logger.error('Receive Client Frame Format Invalid {}'.format(frame))
         logger.debug('Receive Client({}:{}) frame: {}'.format(
             *self._socket_fd.getpeername(), frame))
         self._opcode_handlers.get(frame.flag_opcode)(frame)

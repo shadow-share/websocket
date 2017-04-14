@@ -2,6 +2,7 @@
 #
 # Copyright (C) 2017 ShadowMan
 #
+import ssl
 import socket
 from websocket.utils import generic
 
@@ -51,6 +52,8 @@ class TCPStream(object):
         try:
             return self._socket_fd.recv(buffer_size)
         except BlockingIOError:
+            return b''
+        except ssl.SSLWantReadError:
             return b''
         except Exception:
             raise

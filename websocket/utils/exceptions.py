@@ -62,3 +62,7 @@ class HttpVerifierError(Exception):
 
 class FrameVerifierError(Exception):
     pass
+
+
+class WSSCertificateFileNotFound(Exception):
+    pass

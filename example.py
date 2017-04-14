@@ -57,4 +57,29 @@ class ChatHandler(handler.WebSocketHandlerProtocol):
         websocket.logger.warning('client({}:{}) error occurs'.format(
             *self._socket_name))
 
+
+# wss_server = websocket.create_websocket_secure_server('0.0.0.0', port=8998)
+#
+# @wss_server.register_handler('/chat')
+# class ChatHandler(handler.WebSocketHandlerProtocol):
+#     def __init__(self, socket_fd: socket.socket):
+#         handler.WebSocketHandlerProtocol.__init__(self, socket_fd)
+#
+#     def on_connect(self):
+#         return wss_server.broadcast(websocket.TextMessage(
+#             'Welcome {}:{} join chat'.format(*self._socket_name)), True)
+#
+#     def on_message(self, message):
+#         return wss_server.broadcast(websocket.TextMessage(message))
+#
+#     def on_close(self, code, reason):
+#         return wss_server.broadcast(websocket.TextMessage(
+#             '{} exit chat room'.format(self._socket_name)))
+#
+#     def on_error(self, code, reason):
+#         websocket.logger.warning('client({}:{}) error occurs'.format(
+#             *self._socket_name))
+#
+# wss_server.run_forever()
+
 ws_server.run_forever()

@@ -82,6 +82,7 @@
 # following steps.
 import os
 import abc
+import ssl
 import sys
 import atexit
 import signal
@@ -105,7 +106,7 @@ from websocket.controller import (
 from websocket.controller.base_controller import BaseController
 
 
-__all__ = ['create_websocket_server']
+__all__ = ['create_websocket_server', 'create_websocket_secure_server']
 
 
 class Daemon(object):
@@ -313,7 +314,7 @@ class WebSocketServerBase(Daemon, metaclass=abc.ABCMeta):
 
     def _accept_client(self, server_fd):
         # accept new client
-        client_fd, client_address = server_fd.accept()
+        client_fd, client_address = self._socket_accept(server_fd)
         # logger
         logger.debug('Client({}:{}) connecting'.format(*client_address))
         # set non=blocking
@@ -330,6 +331,9 @@ class WebSocketServerBase(Daemon, metaclass=abc.ABCMeta):
         # create tcp stream class
         self._client_list['default'][client_fd] = \
             tcp_stream.TCPStream(client_fd)
+
+    def _socket_accept(self, socket_fd):
+        return socket_fd.accept()
 
     def _accept_http_handshake(self, socket_fd):
         _tcp_stream = \
@@ -503,7 +507,8 @@ class WebSocketServer(WebSocketServerBase):
 
         namespace = _self_class.__namespace__
         if namespace not in self._client_list:
-            raise exceptions.FatalError('Fatal error occurs, please report')
+            raise exceptions.FatalError(
+                'handler context invalid for namespace not found')
 
         if hasattr(message, 'pack'):
             pass
@@ -558,6 +563,60 @@ class WebSocketServer(WebSocketServerBase):
             raise exc_val
 
 
+class WebsocketSecureServer(WebSocketServer):
+
+    def __init__(self, host, port, *, debug=False, server_name=None,
+                 cert_file=None, key_file=None):
+        super(WebsocketSecureServer, self).__init__(
+            host, port, debug=debug, server_name=server_name)
+        self._cert_file = cert_file
+        self._key_file = key_file
+        self._ssl_context = None
+
+        self._init_ssl_context()
+
+    def _init_ssl_context(self):
+        if self._cert_file is None:
+            self._cert_file = self._find_file('server.crt')
+        if self._key_file is None:
+            self._key_file = self._find_file('server.key')
+
+        if self._cert_file and not os.path.isfile(self._cert_file):
+            self._cert_file = None
+        if self._key_file and not os.path.isfile(self._key_file):
+            self._key_file = None
+
+        if not self._cert_file or not self._key_file:
+            raise exceptions.WSSCertificateFileNotFound(
+                'certificate file not found')
+
+        self._ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+        self._ssl_context.load_cert_chain(
+            certfile=self._cert_file, keyfile=self._key_file)
+
+    def _socket_accept(self, socket_fd):
+        client, address = socket_fd.accept()
+
+        try:
+            client = self._ssl_context.wrap_socket(client, server_side=True)
+        except ssl.SSLError:
+            raise
+        except Exception:
+            raise
+        finally:
+            return client, address
+
+    @staticmethod
+    def _find_file(file_name, path_range=('.', '..')):
+        curr_dir = os.getcwd()
+
+        for path in path_range:
+            absolute_path = os.path.join(curr_dir, path, file_name)
+            if os.path.isfile(absolute_path):
+                return os.path.abspath(absolute_path)
+        return None
+
+
 def create_websocket_server(host='localhost', port=8999, *, debug=False,
                             logging_level='info', log_file=None,
                             server_name=True):
@@ -565,3 +624,14 @@ def create_websocket_server(host='localhost', port=8999, *, debug=False,
                          server_name=server_name) as server:
         logger.init(logging_level, server.is_debug, log_file)
         return server
+
+
+def create_websocket_secure_server(host='localhost', port=8999, *, debug=False,
+                                   logging_level='info', log_file=None,
+                                   server_name=True, cert_file=None,
+                                   key_file=None):
+    with WebsocketSecureServer(host, port, debug=debug,
+                               server_name=server_name, cert_file=cert_file,
+                               key_file=key_file) as wss_server:
+        logger.init(logging_level, wss_server.is_debug, log_file)
+        return wss_server

@@ -4,7 +4,7 @@
 #
 import ssl
 import socket
-from websocket.utils import generic
+from websocket.utils import generic, exceptions
 
 
 class TCPStream(object):
@@ -55,6 +55,8 @@ class TCPStream(object):
             return b''
         except ssl.SSLWantReadError:
             return b''
+        except ConnectionAbortedError as e:
+            raise exceptions.ConnectClosed((1002, str(e)))
         except Exception:
             raise
 

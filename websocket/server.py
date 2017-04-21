@@ -3,9 +3,6 @@
 # Copyright (C) 2017 ShadowMan
 #
 
-# If the connection is happening on an HTTPS (HTTP-over-TLS) port,
-# perform a TLS handshake over the connection.
-
 #  The absence of such a field is equivalent to the null value
 # (meaning that if the server does not wish to agree to one of
 # the suggested subprotocols, it MUST NOT send back a
@@ -14,12 +11,6 @@
 # purposes and is not a legal value for this field.
 
 # Supporting Multiple Versions of WebSocket Protocol
-
-
-# a client MUST mask all frames that it sends to the server.
-
-# A client MUST close a connection if it detects a masked
-# frame.
 
 # A fragmented message consists of a single frame with the FIN bit
 # clear and an opcode other than 0, followed by zero or more frames
@@ -73,13 +64,6 @@
 # example, if a streaming API is used, a part of a frame can be
 # delivered to the application.  However, note that this assumption
 # might not hold true for all future WebSocket extensions.
-
-#  Sending and Receiving Data
-
-# The endpoint MUST ensure the WebSocket connection is in the OPEN
-# state (cf. Sections 4.1 and 4.2.2.)  If at any point the state of
-# the WebSocket connection changes, the endpoint MUST abort the
-# following steps.
 import os
 import abc
 import ssl
@@ -286,7 +270,9 @@ class WebSocketServerBase(Daemon, metaclass=abc.ABCMeta):
         self._select_loop()
 
     def _select_loop(self):
+        # efficient I/O multiplexing
         self._selector = selectors.DefaultSelector()
+        # register server socket file descriptor
         self._selector.register(
             self._server_fd, selectors.EVENT_READ, (self._accept_client, None))
 
@@ -302,8 +288,10 @@ class WebSocketServerBase(Daemon, metaclass=abc.ABCMeta):
                             callback(key.fileobj)
                         else:
                             callback(key.fileobj, namespace)
-                    except exceptions.ExitWrite:  # on client/server closed
+                    except exceptions.ExitWrite:
+                        # on client/server closed
                         pass
+                # clean all socket write buffer
                 self._clean_write_queue()
         except KeyboardInterrupt:  # when start debug mode listen Ctrl-C
             logger.info('<Ctrl + C> Bye, Never BUG')
@@ -357,11 +345,13 @@ class WebSocketServerBase(Daemon, metaclass=abc.ABCMeta):
             if not support_extension[1]:
                 support_extension = None
         except exceptions.HttpVerifierError:
+            # verify error occurs, return 403 Forbidden
             http_response = http_message.HttpResponse(
                 403, (b'X-Forbidden-Reason', b'http-options-invalid'))
-            # verify error occurs
+            # write directly to the data, and then close the connection
             self._socket_ready_write(
                 socket_fd, http_response, http_request.url_path)
+            # close connection
             self._close_client(socket_fd, 'default')
         logger.debug('Request: {}'.format(repr(http_request)))
         # TODO. chunk header-field
@@ -470,6 +460,8 @@ class WebSocketServerBase(Daemon, metaclass=abc.ABCMeta):
                 raise exceptions.SendDataPackError('data pack invalid')
             if self._close_information[socket_fd][1] is True:
                 self._close_client(socket_fd, namespace)
+        except ConnectionAbortedError as e:
+            raise exceptions.ConnectClosed((1002, str(e)))
         except Exception:
             raise
 
@@ -596,8 +588,9 @@ class WebsocketSecureServer(WebSocketServer):
 
     def _socket_accept(self, socket_fd):
         client, address = socket_fd.accept()
-
         try:
+            # If the connection is happening on an HTTPS (HTTP-over-TLS) port,
+            # perform a TLS handshake over the connection.
             client = self._ssl_context.wrap_socket(client, server_side=True)
         except ssl.SSLError:
             raise
@@ -630,8 +623,11 @@ def create_websocket_secure_server(host='localhost', port=8999, *, debug=False,
                                    logging_level='info', log_file=None,
                                    server_name=True, cert_file=None,
                                    key_file=None):
-    with WebsocketSecureServer(host, port, debug=debug,
-                               server_name=server_name, cert_file=cert_file,
-                               key_file=key_file) as wss_server:
-        logger.init(logging_level, wss_server.is_debug, log_file)
-        return wss_server
+    try:
+        with WebsocketSecureServer(host, port, debug=debug,
+                                   server_name=server_name, cert_file=cert_file,
+                                   key_file=key_file) as wss_server:
+            logger.init(logging_level, wss_server.is_debug, log_file)
+            return wss_server
+    except exceptions.WSSCertificateFileNotFound:
+        logger.error_exit('certificate file not found, server exited')

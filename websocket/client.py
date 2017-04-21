@@ -95,6 +95,11 @@
 # This header field is sent by all browser clients.
 # A connection attempt lacking this header field SHOULD NOT be
 # interpreted as coming from a browser client.
+
+# a client MUST mask all frames that it sends to the server.
+
+# A client MUST close a connection if it detects a masked frame.
+
 import contextlib
 
 class WebSocketClient(object):

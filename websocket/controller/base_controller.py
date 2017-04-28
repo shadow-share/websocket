@@ -25,14 +25,14 @@ class BaseController(object, metaclass=abc.ABCMeta):
         self._output = output
         # opcode handler mapping
         self._opcode_handlers = {
-            0x0: lambda f: print(f), 0x1: self._valid_message,
+            0x0: lambda f: print(f),  0x1: self._valid_message,
             0x2: self._valid_message, 0x3: lambda f: print(f),
-            0x4: lambda f: print(f), 0x5: lambda f: print(f),
-            0x6: lambda f: print(f), 0x7: lambda f: print(f),
-            0x8: self._recv_close, 0x9: lambda f: print(f),
-            0xA: lambda f: print(f), 0xB: lambda f: print(f),
-            0xC: lambda f: print(f), 0xD: lambda f: print(f),
-            0xE: lambda f: print(f), 0xF: lambda f: print(f),
+            0x4: lambda f: print(f),  0x5: lambda f: print(f),
+            0x6: lambda f: print(f),  0x7: lambda f: print(f),
+            0x8: self._recv_close,    0x9: lambda f: print(f),
+            0xA: lambda f: print(f),  0xB: lambda f: print(f),
+            0xC: lambda f: print(f),  0xD: lambda f: print(f),
+            0xE: lambda f: print(f),  0xF: lambda f: print(f),
         }
 
     def ready_receive(self):
